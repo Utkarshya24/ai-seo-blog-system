@@ -1,5 +1,3 @@
-'use cache';
-
 import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils/seo';

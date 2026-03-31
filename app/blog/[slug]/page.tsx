@@ -1,5 +1,3 @@
-'use cache';
-
 import { prisma } from '@/lib/db';
 import { formatDate, generateTableOfContents } from '@/lib/utils/seo';
 import { Metadata, ResolvingMetadata } from 'next';

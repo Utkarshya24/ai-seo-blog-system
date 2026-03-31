@@ -1,10 +1,8 @@
-'use cache';
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 
-export default async function Home() {
+export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       {/* Navigation */}
