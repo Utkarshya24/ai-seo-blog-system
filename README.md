@@ -1,11 +1,11 @@
 # AI SEO Blog System
 
-A production-ready blog system that uses AI to generate, manage, and optimize SEO-friendly content. Built with Next.js 16, Prisma, OpenAI, and Neon PostgreSQL.
+A production-ready blog system that uses AI to generate, manage, and optimize SEO-friendly content. Built with Next.js 16, Prisma, Google Gemini API, and Neon PostgreSQL.
 
 ## Features
 
-- **AI-Powered Keyword Generation**: Automatically generate SEO keywords for any niche using OpenAI
-- **Smart Content Creation**: Convert keywords into full, well-structured blog posts
+- **AI-Powered Keyword Generation**: Automatically generate SEO keywords for any niche using Google Gemini
+- **Smart Content Creation**: Convert keywords into full, well-structured blog posts with Gemini AI
 - **SEO Optimization**: Auto-generate meta descriptions, URL slugs, and internal linking
 - **Cron Job Automation**: Schedule keyword generation, blog posting, and metrics updates
 - **Performance Tracking**: Monitor views, clicks, bounce rates, and engagement per post
@@ -17,7 +17,7 @@ A production-ready blog system that uses AI to generate, manage, and optimize SE
 - **Framework**: Next.js 16 (App Router)
 - **Database**: Neon PostgreSQL (serverless)
 - **ORM**: Prisma
-- **AI**: OpenAI API (GPT-4o-mini)
+- **AI**: Google Gemini API (gemini-pro)
 - **Task Scheduling**: node-cron
 - **Styling**: Tailwind CSS v4
 - **UI Components**: shadcn/ui
@@ -34,7 +34,7 @@ cp .env.example .env.local
 
 Required environment variables:
 - `DATABASE_URL`: Your Neon PostgreSQL connection string
-- `OPENAI_API_KEY`: Your OpenAI API key
+- `GEMINI_API_KEY`: Your Google Gemini API key
 - `CRON_SECRET`: Secret key for triggering cron jobs (auto-generated or custom)
 - `NEXT_PUBLIC_APP_URL`: Your app's public URL (for og:image and canonical URLs)
 

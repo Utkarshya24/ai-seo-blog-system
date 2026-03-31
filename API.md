@@ -1,6 +1,6 @@
 # API Documentation
 
-Complete reference for all API endpoints in the AI SEO Blog System.
+Complete reference for all API endpoints in the AI SEO Blog System. All AI-powered features use Google Gemini API for content generation.
 
 ## Base URL
 ```
