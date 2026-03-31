@@ -1,0 +1,61 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Keyword {
+  id        String   @id @default(cuid())
+  keyword   String   @unique
+  difficulty Int     @default(0) // SEO difficulty score 0-100
+  searchVolume Int   @default(0)
+  generatedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  posts Post[]
+
+  @@index([keyword])
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  keywordId String
+  keyword   Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  
+  title     String
+  slug      String   @unique
+  content   String   @db.Text
+  metaDescription String
+  
+  status    String   @default("draft") // draft, published, scheduled
+  publishedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  seoMetrics SeoMetrics?
+
+  @@index([keywordId])
+  @@index([slug])
+  @@index([status])
+}
+
+model SeoMetrics {
+  id        String   @id @default(cuid())
+  postId    String   @unique
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  
+  backlinks Int      @default(0)
+  traffic   Int      @default(0)
+  ranking   Int      @default(0)
+  
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+}
