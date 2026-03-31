@@ -12,6 +12,18 @@ interface CronJobConfig {
   task: () => Promise<void>;
 }
 
+async function generateUniqueSlug(title: string): Promise<string> {
+  const baseSlug = generateSlug(title);
+  let slug = baseSlug;
+  let suffix = 1;
+
+  while (true) {
+    const existing = await prisma.post.findUnique({ where: { slug } });
+    if (!existing) return slug;
+    slug = `${baseSlug}-${suffix++}`;
+  }
+}
+
 /**
  * Daily keyword generation job
  */
@@ -27,11 +39,15 @@ export const dailyKeywordGenerationJob = {
         const keywords = await generateKeywords({ niche, count: 3 });
 
         for (const keyword of keywords) {
-          await prisma.keyword.create({
-            data: {
+          await prisma.keyword.upsert({
+            where: { keyword },
+            update: {
+              searchVolume: Math.floor(Math.random() * 5000) + 100,
+              updatedAt: new Date(),
+            },
+            create: {
               keyword,
-              niche,
-              status: 'pending',
+              difficulty: Math.floor(Math.random() * 101),
               searchVolume: Math.floor(Math.random() * 5000) + 100,
             },
           });
@@ -56,9 +72,9 @@ export const weeklyBlogGenerationJob = {
   task: async () => {
     console.log('[CRON] Starting weekly blog generation job');
     try {
-      // Get pending keywords
+      // Get keywords without associated posts yet
       const pendingKeywords = await prisma.keyword.findMany({
-        where: { status: 'pending' },
+        where: { posts: { none: {} } },
         take: 2, // Generate 2 blog posts per week
       });
 
@@ -80,26 +96,20 @@ export const weeklyBlogGenerationJob = {
             content
           );
 
-          const slug = generateSlug(`Everything You Need to Know About ${keyword.keyword}`);
+          const title = `Everything You Need to Know About ${keyword.keyword}`;
+          const slug = await generateUniqueSlug(title);
 
           // Create post
           const post = await prisma.post.create({
             data: {
-              title: `Everything You Need to Know About ${keyword.keyword}`,
+              title,
               content,
               slug,
               keywordId: keyword.id,
               metaDescription,
               status: 'published', // Auto-publish for cron jobs
-              readingTime: Math.ceil(content.split(/\s+/).length / 200),
               publishedAt: new Date(),
             },
-          });
-
-          // Update keyword status
-          await prisma.keyword.update({
-            where: { id: keyword.id },
-            data: { status: 'used' },
           });
 
           console.log(`[CRON] Generated and published blog post: ${post.slug}`);
@@ -131,26 +141,23 @@ export const weeklyMetricsUpdateJob = {
 
       for (const post of posts) {
         // Simulate metrics data (in real app, fetch from Google Analytics or similar)
-        const simulatedViews = Math.floor(Math.random() * 1000) + 100;
-        const simulatedClicks = Math.floor(simulatedViews * 0.05); // 5% CTR
-        const simulatedAvgTime = Math.floor(Math.random() * 300) + 30; // 30-330 seconds
-        const simulatedBounceRate = Math.random() * 50 + 20; // 20-70%
+        const simulatedTraffic = Math.floor(Math.random() * 5000) + 200;
+        const simulatedBacklinks = Math.floor(Math.random() * 60);
+        const simulatedRanking = Math.floor(Math.random() * 100) + 1; // 1 is best
 
         await prisma.seoMetrics.upsert({
           where: { postId: post.id },
           update: {
-            views: simulatedViews,
-            clicks: simulatedClicks,
-            avgTimeOnPage: simulatedAvgTime,
-            bounceRate: simulatedBounceRate,
+            traffic: simulatedTraffic,
+            backlinks: simulatedBacklinks,
+            ranking: simulatedRanking,
             updatedAt: new Date(),
           },
           create: {
             postId: post.id,
-            views: simulatedViews,
-            clicks: simulatedClicks,
-            avgTimeOnPage: simulatedAvgTime,
-            bounceRate: simulatedBounceRate,
+            traffic: simulatedTraffic,
+            backlinks: simulatedBacklinks,
+            ranking: simulatedRanking,
           },
         });
       }

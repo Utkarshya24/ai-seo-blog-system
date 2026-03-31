@@ -1,25 +1,21 @@
 # API Documentation
 
-Complete reference for all API endpoints in the AI SEO Blog System. All AI-powered features use Google Gemini API for content generation.
+Base URL:
 
-## Base URL
-```
+```text
 http://localhost:3000/api
 ```
 
-## Authentication
-Currently, no authentication is required. In production, add authentication middleware to sensitive endpoints.
+No auth is enabled except cron secret validation on `/cron`.
 
----
+## Keywords
 
-## Keywords Endpoints
+### POST `/keywords/generate`
 
-### Generate Keywords
-Generate new SEO keywords for a given niche.
+Generate keywords using Gemini and upsert them into DB.
 
-**Endpoint:** `POST /keywords/generate`
+Request:
 
-**Request Body:**
 ```json
 {
   "niche": "AI tools",
@@ -27,305 +23,282 @@ Generate new SEO keywords for a given niche.
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
   "success": true,
   "keywords": [
     {
-      "id": "uuid",
-      "keyword": "best AI tools for productivity",
-      "niche": "AI tools",
+      "id": "ckw...",
+      "keyword": "best ai tools for teams",
+      "difficulty": 42,
+      "searchVolume": 1200,
+      "generatedAt": "2026-03-31T12:00:00.000Z",
+      "updatedAt": "2026-03-31T12:00:00.000Z",
+      "niche": "general",
       "status": "pending",
-      "searchVolume": 1240,
-      "createdAt": "2024-01-15T10:30:00Z"
+      "createdAt": "2026-03-31T12:00:00.000Z"
     }
   ],
   "count": 5
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 400: Missing required fields (niche)
-- 500: AI generation failed
+Status codes:
 
----
+- `200` success
+- `400` missing `niche`
+- `500` generation or DB error
 
-### Get Keywords
-Retrieve all keywords with optional filters.
+### GET `/keywords/generate`
 
-**Endpoint:** `GET /keywords/generate`
+Get keywords.
 
-**Query Parameters:**
-- `status`: Filter by status ('pending', 'used') - optional
-- `niche`: Filter by niche - optional
+Supported query params:
 
-**Example:**
+- `status`: `pending | used` (derived from keyword-post relation)
+- `niche`: compatibility filter; mapped to keyword text match
+- `q`: keyword text search
+- `minDifficulty`: number
+- `maxDifficulty`: number
+
+Example:
+
+```text
+GET /keywords/generate?status=pending&q=ai
 ```
-GET /keywords/generate?status=pending&niche=AI%20tools
-```
 
-**Response:**
+Response:
+
 ```json
 {
   "keywords": [
     {
-      "id": "uuid",
-      "keyword": "best AI tools for productivity",
-      "niche": "AI tools",
+      "id": "ckw...",
+      "keyword": "best ai tools for teams",
+      "difficulty": 42,
+      "searchVolume": 1200,
+      "generatedAt": "2026-03-31T12:00:00.000Z",
+      "updatedAt": "2026-03-31T12:00:00.000Z",
+      "niche": "general",
       "status": "pending",
-      "searchVolume": 1240,
-      "createdAt": "2024-01-15T10:30:00Z"
+      "createdAt": "2026-03-31T12:00:00.000Z"
     }
   ]
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 500: Database error
+## Posts
 
----
+### POST `/posts/generate`
 
-## Posts Endpoints
+Generate a draft post from a keyword.
 
-### Generate Blog Post
-Create a new blog post from a keyword.
+Request:
 
-**Endpoint:** `POST /posts/generate`
-
-**Request Body:**
 ```json
 {
-  "keywordId": "uuid-of-keyword",
+  "keywordId": "ckw...",
   "title": "The Ultimate Guide to AI Tools",
   "tone": "professional"
 }
 ```
 
-**Parameters:**
-- `keywordId`: (required) UUID of the keyword to use
-- `title`: (required) Blog post title
-- `tone`: (optional) Writing tone - 'professional', 'casual', etc.
+Response:
 
-**Response:**
 ```json
 {
   "success": true,
   "post": {
-    "id": "uuid",
+    "id": "cpo...",
+    "keywordId": "ckw...",
     "title": "The Ultimate Guide to AI Tools",
     "slug": "the-ultimate-guide-to-ai-tools",
     "content": "# The Ultimate Guide to AI Tools\n\n...",
-    "metaDescription": "Discover the best AI tools for productivity and efficiency...",
+    "metaDescription": "A concise SEO description...",
     "status": "draft",
-    "readingTime": 5,
-    "keywordId": "uuid",
     "publishedAt": null,
-    "createdAt": "2024-01-15T10:35:00Z",
-    "updatedAt": "2024-01-15T10:35:00Z"
+    "createdAt": "2026-03-31T12:05:00.000Z",
+    "updatedAt": "2026-03-31T12:05:00.000Z",
+    "keyword": {
+      "id": "ckw...",
+      "keyword": "best ai tools for teams",
+      "difficulty": 42,
+      "searchVolume": 1200,
+      "generatedAt": "2026-03-31T12:00:00.000Z",
+      "updatedAt": "2026-03-31T12:00:00.000Z"
+    },
+    "readingTime": 5
   }
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 400: Missing required fields
-- 404: Keyword not found
-- 500: AI generation failed
+Status codes:
 
----
+- `200` success
+- `400` missing `keywordId` or `title`
+- `404` keyword not found
+- `500` generation or DB error
 
-### Get Posts
-Retrieve all posts with optional filters.
+### GET `/posts/generate`
 
-**Endpoint:** `GET /posts/generate`
+Get posts.
 
-**Query Parameters:**
-- `status`: Filter by status ('draft', 'published') - optional
-- `keywordId`: Filter by keyword - optional
+Query params:
 
-**Example:**
+- `status`: `draft | published | scheduled`
+- `keywordId`
+
+Example:
+
+```text
+GET /posts/generate?status=published
 ```
-GET /posts/generate?status=draft
-```
 
-**Response:**
+Response:
+
 ```json
 {
   "posts": [
     {
-      "id": "uuid",
+      "id": "cpo...",
+      "keywordId": "ckw...",
       "title": "The Ultimate Guide to AI Tools",
       "slug": "the-ultimate-guide-to-ai-tools",
-      "status": "draft",
-      "readingTime": 5,
+      "content": "# The Ultimate Guide to AI Tools\n\n...",
+      "metaDescription": "A concise SEO description...",
+      "status": "published",
+      "publishedAt": "2026-03-31T12:10:00.000Z",
+      "createdAt": "2026-03-31T12:05:00.000Z",
+      "updatedAt": "2026-03-31T12:10:00.000Z",
       "keyword": {
-        "id": "uuid",
-        "keyword": "best AI tools"
+        "id": "ckw...",
+        "keyword": "best ai tools for teams",
+        "difficulty": 42,
+        "searchVolume": 1200,
+        "generatedAt": "2026-03-31T12:00:00.000Z",
+        "updatedAt": "2026-03-31T12:00:00.000Z"
       },
-      "publishedAt": null,
-      "createdAt": "2024-01-15T10:35:00Z"
+      "readingTime": 5
     }
   ]
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 500: Database error
+### PUT `/posts/publish`
 
----
+Publish a post.
 
-### Publish Post
-Publish a draft post.
+Request:
 
-**Endpoint:** `PUT /posts/publish`
-
-**Request Body:**
 ```json
 {
-  "postId": "uuid-of-post"
+  "postId": "cpo..."
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
   "success": true,
   "post": {
-    "id": "uuid",
-    "title": "The Ultimate Guide to AI Tools",
-    "slug": "the-ultimate-guide-to-ai-tools",
+    "id": "cpo...",
     "status": "published",
-    "publishedAt": "2024-01-15T10:40:00Z",
-    "readingTime": 5,
-    "keyword": {
-      "id": "uuid",
-      "keyword": "best AI tools"
-    },
-    "createdAt": "2024-01-15T10:35:00Z"
+    "publishedAt": "2026-03-31T12:10:00.000Z"
   }
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 400: Missing postId
-- 404: Post not found
-- 500: Database error
+## Metrics
 
----
+### GET `/metrics`
 
-## Metrics Endpoints
+Get SEO metrics.
 
-### Get Metrics
-Retrieve SEO metrics for posts.
+Query params:
 
-**Endpoint:** `GET /metrics`
+- `postId` optional
 
-**Query Parameters:**
-- `postId`: Get metrics for a specific post - optional
+Response shape includes native DB fields and compatibility fields used by current admin UI.
 
-**Example:**
-```
-GET /metrics?postId=uuid-of-post
-```
+Single response example:
 
-**Response (single post):**
 ```json
 {
-  "id": "uuid",
-  "postId": "uuid",
-  "views": 1250,
-  "clicks": 85,
-  "avgTimeOnPage": 185,
-  "bounceRate": 35.2,
-  "createdAt": "2024-01-15T10:30:00Z",
-  "updatedAt": "2024-01-15T11:45:00Z"
+  "id": "cmet...",
+  "postId": "cpo...",
+  "backlinks": 12,
+  "traffic": 1300,
+  "ranking": 18,
+  "fetchedAt": "2026-03-31T12:20:00.000Z",
+  "updatedAt": "2026-03-31T12:20:00.000Z",
+  "views": 1300,
+  "clicks": 65,
+  "avgTimeOnPage": 324,
+  "bounceRate": 68.8,
+  "createdAt": "2026-03-31T12:20:00.000Z"
 }
 ```
 
-**Response (all metrics):**
+### POST `/metrics`
+
+Upsert metrics for a post.
+
+Supports either native fields or compatibility fields.
+
+Request (compatibility style):
+
 ```json
 {
-  "metrics": [
-    {
-      "id": "uuid",
-      "postId": "uuid",
-      "views": 1250,
-      "clicks": 85,
-      "avgTimeOnPage": 185,
-      "bounceRate": 35.2,
-      "updatedAt": "2024-01-15T11:45:00Z"
-    }
-  ]
+  "postId": "cpo...",
+  "views": 1300,
+  "clicks": 65
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 404: Metrics not found (when postId specified)
-- 500: Database error
+Request (native style):
 
----
-
-### Create/Update Metrics
-Create new metrics or update existing ones.
-
-**Endpoint:** `POST /metrics`
-
-**Request Body:**
 ```json
 {
-  "postId": "uuid-of-post",
-  "views": 1250,
-  "clicks": 85,
-  "avgTimeOnPage": 185,
-  "bounceRate": 35.2
+  "postId": "cpo...",
+  "traffic": 1300,
+  "backlinks": 12,
+  "ranking": 18
 }
 ```
 
-**Parameters:**
-- `postId`: (required) UUID of the post
-- `views`: (optional, default: 0) Number of page views
-- `clicks`: (optional, default: 0) Number of search clicks
-- `avgTimeOnPage`: (optional, default: 0) Average time in seconds
-- `bounceRate`: (optional, default: 0) Bounce rate percentage
+Response:
 
-**Response:**
 ```json
 {
   "success": true,
   "metrics": {
-    "id": "uuid",
-    "postId": "uuid",
-    "views": 1250,
-    "clicks": 85,
-    "avgTimeOnPage": 185,
-    "bounceRate": 35.2,
-    "createdAt": "2024-01-15T10:30:00Z",
-    "updatedAt": "2024-01-15T11:50:00Z"
+    "id": "cmet...",
+    "postId": "cpo...",
+    "backlinks": 12,
+    "traffic": 1300,
+    "ranking": 18,
+    "fetchedAt": "2026-03-31T12:20:00.000Z",
+    "updatedAt": "2026-03-31T12:20:00.000Z",
+    "views": 1300,
+    "clicks": 65,
+    "avgTimeOnPage": 324,
+    "bounceRate": 68.8,
+    "createdAt": "2026-03-31T12:20:00.000Z"
   }
 }
 ```
 
-**Status Codes:**
-- 200: Success
-- 400: Missing postId
-- 500: Database error
+## Cron
 
----
+### POST `/cron`
 
-## Cron Endpoints
+Run a job manually.
 
-### Trigger Cron Job (POST)
-Manually trigger a cron job using POST request.
+Request:
 
-**Endpoint:** `POST /cron`
-
-**Request Body:**
 ```json
 {
   "secret": "your-cron-secret",
@@ -333,163 +306,24 @@ Manually trigger a cron job using POST request.
 }
 ```
 
-**Job Types:**
-- `generate-keywords`: Daily keyword generation
-- `generate-blog`: Weekly blog generation
-- `update-metrics`: Weekly metrics update
+Jobs:
 
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Daily keyword generation completed"
-}
+- `generate-keywords`
+- `generate-blog`
+- `update-metrics`
+
+### GET `/cron`
+
+Same behavior via query string:
+
+```text
+/cron?secret=your-cron-secret&job=generate-keywords
 ```
 
-**Status Codes:**
-- 200: Success
-- 400: Unknown job type
-- 401: Invalid secret
-- 500: Job execution failed
-
----
-
-### Trigger Cron Job (GET)
-Manually trigger a cron job using GET request (for services like EasyCron).
-
-**Endpoint:** `GET /cron`
-
-**Query Parameters:**
-- `secret`: (required) Cron job secret
-- `job`: (required) Job type
-
-**Example:**
-```
-GET /cron?secret=your-cron-secret&job=generate-keywords
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Daily keyword generation completed"
-}
-```
-
-**Status Codes:**
-- 200: Success
-- 400: Missing parameters or unknown job type
-- 401: Invalid secret
-- 500: Job execution failed
-
----
-
-## Error Responses
-
-All errors follow this format:
+## Error Format
 
 ```json
 {
-  "error": "Description of what went wrong"
+  "error": "Description"
 }
-```
-
-**Common Error Messages:**
-- `"Missing required fields"` - Check request body
-- `"Unauthorized"` - Invalid cron secret
-- `"Unknown job type"` - Invalid cron job name
-- `"Keyword not found"` - Invalid keywordId
-- `"Post not found"` - Invalid postId
-- `"Failed to generate keywords"` - OpenAI API error
-- `"Failed to generate blog post"` - OpenAI API error
-
----
-
-## Rate Limiting
-
-Currently no rate limiting is implemented. For production, consider adding:
-- API key authentication
-- Rate limiting middleware
-- Request validation
-- CORS configuration
-
----
-
-## Examples
-
-### Complete Workflow
-
-1. **Generate Keywords**
-```bash
-curl -X POST http://localhost:3000/api/keywords/generate \
-  -H "Content-Type: application/json" \
-  -d '{"niche": "AI tools", "count": 3}'
-```
-
-2. **Generate Blog Post** (use keywordId from above)
-```bash
-curl -X POST http://localhost:3000/api/posts/generate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "keywordId": "abc123",
-    "title": "Best AI Tools for 2024"
-  }'
-```
-
-3. **Publish Post** (use postId from above)
-```bash
-curl -X PUT http://localhost:3000/api/posts/publish \
-  -H "Content-Type: application/json" \
-  -d '{"postId": "xyz789"}'
-```
-
-4. **Update Metrics**
-```bash
-curl -X POST http://localhost:3000/api/metrics \
-  -H "Content-Type: application/json" \
-  -d '{
-    "postId": "xyz789",
-    "views": 500,
-    "clicks": 25,
-    "avgTimeOnPage": 120,
-    "bounceRate": 40
-  }'
-```
-
----
-
-## SDK Integration
-
-For frontend integration, use the fetch API:
-
-```typescript
-// Generate keywords
-const keywordsRes = await fetch('/api/keywords/generate', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ niche: 'AI tools', count: 5 })
-});
-const keywords = await keywordsRes.json();
-```
-
----
-
-## Webhook Integration
-
-To integrate with external services (like EasyCron), use:
-
-```
-POST http://your-domain.com/api/cron
-Content-Type: application/json
-
-{
-  "secret": "your-cron-secret",
-  "job": "generate-keywords"
-}
-```
-
-Or for services that only support GET:
-
-```
-http://your-domain.com/api/cron?secret=your-cron-secret&job=generate-keywords
 ```

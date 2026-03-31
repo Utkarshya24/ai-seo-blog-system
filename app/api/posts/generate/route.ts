@@ -3,6 +3,39 @@ import { prisma } from '@/lib/db';
 import { generateBlogPost, generateMetaDescription } from '@/lib/ai/openai-service';
 import { generateSlug } from '@/lib/utils/seo';
 
+function getErrorStatus(error: unknown): number {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (!Number.isNaN(status) && status >= 400 && status < 600) return status;
+  }
+  if (error instanceof Error && error.message.includes('429')) return 429;
+  return 500;
+}
+
+function getUserFacingError(error: unknown): string {
+  const status = getErrorStatus(error);
+  if (status === 429) {
+    return 'Gemini quota/rate limit exceeded. Retry shortly or use a key/project with available quota.';
+  }
+  return error instanceof Error ? error.message : 'Failed to generate blog post';
+}
+
+function calculateReadingTime(content: string): number {
+  return Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
+}
+
+async function generateUniqueSlug(title: string): Promise<string> {
+  const baseSlug = generateSlug(title);
+  let slug = baseSlug;
+  let suffix = 1;
+
+  while (true) {
+    const existing = await prisma.post.findUnique({ where: { slug } });
+    if (!existing) return slug;
+    slug = `${baseSlug}-${suffix++}`;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -45,7 +78,7 @@ export async function POST(request: NextRequest) {
     const metaDescription = await generateMetaDescription(title, content);
 
     // Create post in database
-    const slug = generateSlug(title);
+    const slug = await generateUniqueSlug(title);
     const post = await prisma.post.create({
       data: {
         title,
@@ -54,27 +87,24 @@ export async function POST(request: NextRequest) {
         keywordId,
         metaDescription,
         status: 'draft',
-        readingTime: Math.ceil(content.split(/\s+/).length / 200),
       },
-    });
-
-    // Update keyword status
-    await prisma.keyword.update({
-      where: { id: keywordId },
-      data: { status: 'used' },
+      include: {
+        keyword: true,
+      },
     });
 
     return NextResponse.json({
       success: true,
-      post,
+      post: {
+        ...post,
+        readingTime: calculateReadingTime(post.content),
+      },
     });
   } catch (error) {
     console.error('[API] Blog generation error:', error);
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Failed to generate blog post',
-      },
-      { status: 500 }
+      { error: getUserFacingError(error) },
+      { status: getErrorStatus(error) }
     );
   }
 }
@@ -97,7 +127,12 @@ export async function GET(request: NextRequest) {
       take: 50,
     });
 
-    return NextResponse.json({ posts });
+    return NextResponse.json({
+      posts: posts.map((post) => ({
+        ...post,
+        readingTime: calculateReadingTime(post.content),
+      })),
+    });
   } catch (error) {
     console.error('[API] Error fetching posts:', error);
     return NextResponse.json(

@@ -10,6 +10,10 @@ interface BlogPostPageProps {
   }>;
 }
 
+function calculateReadingTime(content: string): number {
+  return Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
+}
+
 async function getPost(slug: string) {
   try {
     const post = await prisma.post.findUnique({
@@ -89,7 +93,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
               {formatDate(new Date(post.publishedAt!))}
             </time>
             <span>•</span>
-            <span>{post.readingTime} min read</span>
+            <span>{calculateReadingTime(post.content)} min read</span>
 
             {post.keyword && (
               <>

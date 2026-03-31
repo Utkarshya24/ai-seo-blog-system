@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   description: 'Read our latest SEO-optimized blog posts powered by AI',
 };
 
+function calculateReadingTime(content: string): number {
+  return Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
+}
+
 async function getPosts() {
   try {
     const posts = await prisma.post.findMany({
@@ -63,7 +67,7 @@ export default async function BlogPage() {
                 </p>
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{post.readingTime} min read</span>
+                  <span>{calculateReadingTime(post.content)} min read</span>
                   <span>{formatDate(new Date(post.publishedAt!))}</span>
                 </div>
 

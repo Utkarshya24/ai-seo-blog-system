@@ -17,7 +17,7 @@ async function main() {
     // Create sample data
     console.log('📝 Creating sample data...');
 
-    // Create sample niches/keywords
+    // Create sample keywords
     const sampleNiches = ['AI Tools', 'Web Development', 'Machine Learning'];
     const keywordCounts = {
       'AI Tools': ['ChatGPT alternatives', 'AI writing tools', 'AI image generators'],
@@ -44,8 +44,7 @@ async function main() {
           await prisma.keyword.create({
             data: {
               keyword,
-              niche,
-              status: 'pending',
+              difficulty: Math.floor(Math.random() * 101),
               searchVolume: Math.floor(Math.random() * 5000) + 100,
             },
           });
