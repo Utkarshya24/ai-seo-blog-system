@@ -604,6 +604,50 @@ Request:
 }
 ```
 
+## Backlink Outreach CRM
+
+### GET `/outreach/opportunities`
+
+List outreach opportunities for active tenant/website.
+
+Query params:
+- `status` (optional)
+- `q` (optional search)
+
+### POST `/outreach/opportunities`
+
+Create outreach opportunity.
+
+Request example:
+
+```json
+{
+  "targetDomain": "example.com",
+  "targetUrl": "https://example.com/write-for-us",
+  "contactName": "Jane Doe",
+  "contactEmail": "jane@example.com",
+  "status": "PROSPECT",
+  "relevanceScore": 72,
+  "authorityScore": 58,
+  "expectedLink": "https://your-site.com/blog/target",
+  "nextFollowUpAt": "2026-04-07",
+  "notes": "Fits SaaS audience. Send pitch with stats."
+}
+```
+
+### PATCH `/outreach/opportunities/[id]`
+
+Update status/details for an opportunity.
+
+Request example:
+
+```json
+{
+  "status": "CONTACTED",
+  "notes": "Intro email sent. Waiting reply."
+}
+```
+
 ### GET `/ai-visibility/summary`
 
 Returns citation share summary in selected window.

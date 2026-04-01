@@ -35,6 +35,15 @@ enum AiProvider {
   OTHER
 }
 
+enum OutreachStatus {
+  PROSPECT
+  CONTACTED
+  FOLLOW_UP
+  NEGOTIATING
+  LIVE
+  REJECTED
+}
+
 model Tenant {
   id        String   @id @default(cuid())
   name      String
@@ -68,6 +77,7 @@ model Website {
   posts      Post[]
   seoMetrics SeoMetrics[]
   aiMentions AiVisibilityMention[]
+  outreachOpportunities OutreachOpportunity[]
 
   @@index([tenantId])
   @@index([domain])
@@ -168,6 +178,32 @@ model AiVisibilityMention {
   @@index([tenantId, websiteId, detectedAt])
   @@index([provider, detectedAt])
   @@index([query])
+}
+
+model OutreachOpportunity {
+  id             String         @id @default(cuid())
+  tenantId       String?
+  websiteId      String?
+  website        Website?       @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  targetDomain   String
+  targetUrl      String?
+  contactName    String?
+  contactEmail   String?
+  contactSocial  String?
+  status         OutreachStatus @default(PROSPECT)
+  relevanceScore Int            @default(0) // 0-100
+  authorityScore Int            @default(0) // 0-100
+  expectedLink   String?
+  notes          String?
+  lastContactedAt DateTime?
+  nextFollowUpAt DateTime?
+  wonAt          DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([tenantId, websiteId, status])
+  @@index([targetDomain])
+  @@index([nextFollowUpAt])
 }
 
 model SeoMetrics {

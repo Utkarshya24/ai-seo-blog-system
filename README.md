@@ -24,6 +24,7 @@ It handles:
 11. Internal link opportunity detection + auto-link insertion assistant.
 12. SERP A/B testing (title/meta variants) with winner selection and apply flow.
 13. AI visibility tracker for ChatGPT/Perplexity citations (mentions + share).
+14. Backlink outreach CRM workflow with status pipeline and follow-up tracking.
 
 ## 2) Tech Stack
 
@@ -152,6 +153,8 @@ Main endpoints:
 - `POST /api/metrics/gsc`
 - `GET/POST /api/ai-visibility/mentions`
 - `GET /api/ai-visibility/summary`
+- `GET/POST /api/outreach/opportunities`
+- `PATCH /api/outreach/opportunities/[id]`
 - `GET/POST /api/cron`
 
 Full API docs:
