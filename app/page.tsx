@@ -13,6 +13,12 @@ export default function Home() {
             <Button asChild variant="ghost">
               <Link href="/blog">Blog</Link>
             </Button>
+            <Button asChild variant="ghost">
+              <Link href="/docs">Docs</Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link href="/auth">Login</Link>
+            </Button>
             <Button asChild>
               <Link href="/admin">Admin Dashboard</Link>
             </Button>
@@ -36,6 +42,9 @@ export default function Home() {
             </Button>
             <Button asChild size="lg" variant="outline">
               <Link href="/admin">Manage Content</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/docs">Read Docs</Link>
             </Button>
           </div>
         </div>

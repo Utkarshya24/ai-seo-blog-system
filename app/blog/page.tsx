@@ -3,9 +3,25 @@ import Link from 'next/link';
 import { formatDate } from '@/lib/utils/seo';
 import { Metadata } from 'next';
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
 export const metadata: Metadata = {
   title: 'Blog | AI SEO Blog System',
   description: 'Read our latest SEO-optimized blog posts powered by AI',
+  alternates: {
+    canonical: '/blog',
+  },
+  openGraph: {
+    title: 'Blog | AI SEO Blog System',
+    description: 'Read our latest SEO-optimized blog posts powered by AI',
+    type: 'website',
+    url: `${APP_URL}/blog`,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Blog | AI SEO Blog System',
+    description: 'Read our latest SEO-optimized blog posts powered by AI',
+  },
 };
 
 function calculateReadingTime(content: string): number {
@@ -35,9 +51,28 @@ async function getPosts() {
 
 export default async function BlogPage() {
   const posts = await getPosts();
+  const itemListJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: 'AI SEO Blog',
+    url: `${APP_URL}/blog`,
+    hasPart: {
+      '@type': 'ItemList',
+      itemListElement: posts.map((post, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        url: `${APP_URL}/blog/${post.slug}`,
+        name: post.title,
+      })),
+    },
+  };
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-background to-secondary">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+      />
       <div className="container mx-auto px-4 py-12">
         {/* Header */}
         <div className="mb-12 text-center">

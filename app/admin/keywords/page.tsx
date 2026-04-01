@@ -1,34 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { tenantFetch } from '@/lib/client/tenant';
 
 interface Keyword {
   id: string;
   keyword: string;
   niche: string;
   status: string;
+  difficulty: number;
   searchVolume: number;
+  generatedAt: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export default function KeywordsManager() {
@@ -36,7 +27,9 @@ export default function KeywordsManager() {
   const [loading, setLoading] = useState(false);
   const [niche, setNiche] = useState('');
   const [count, setCount] = useState(5);
+  const [mode, setMode] = useState<'mixed' | 'standard' | 'comparison'>('mixed');
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchKeywords();
@@ -44,12 +37,14 @@ export default function KeywordsManager() {
 
   async function fetchKeywords() {
     setLoading(true);
+    setError('');
     try {
-      const res = await fetch('/api/keywords/generate');
+      const res = await tenantFetch('/api/keywords/generate');
       const data = await res.json();
       setKeywords(data.keywords || []);
-    } catch (error) {
-      console.error('[Keywords] Error fetching:', error);
+    } catch (fetchError) {
+      console.error('[Keywords] Error fetching:', fetchError);
+      setError('Unable to load keywords right now.');
     } finally {
       setLoading(false);
     }
@@ -60,11 +55,12 @@ export default function KeywordsManager() {
     if (!niche.trim()) return;
 
     setGenerating(true);
+    setError('');
     try {
-      const res = await fetch('/api/keywords/generate', {
+      const res = await tenantFetch('/api/keywords/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche, count }),
+        body: JSON.stringify({ niche, count, mode }),
       });
 
       const data = await res.json();
@@ -72,104 +68,94 @@ export default function KeywordsManager() {
         setKeywords((prev) => [...data.keywords, ...prev]);
         setNiche('');
       } else {
+        setError(data.error || 'Keyword generation failed.');
         console.error('[Keywords] Generation failed:', data.error);
       }
-    } catch (error) {
-      console.error('[Keywords] Error generating:', error);
+    } catch (generateError) {
+      console.error('[Keywords] Error generating:', generateError);
+      setError('Keyword generation failed due to network/server issue.');
     } finally {
       setGenerating(false);
     }
   }
 
   const statusColors: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    used: 'bg-green-100 text-green-800',
-    draft: 'bg-blue-100 text-blue-800',
+    pending: 'bg-amber-100 text-amber-800',
+    used: 'bg-emerald-100 text-emerald-800',
+    draft: 'bg-sky-100 text-sky-800',
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-secondary/50">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <Link href="/admin" className="text-sm text-primary hover:underline">
-                ← Back to Dashboard
-              </Link>
-              <h1 className="mt-2 text-3xl font-bold text-foreground">
-                Keywords Manager
-              </h1>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        {/* Generate Keywords Form */}
-        <Card className="mb-8">
+    <AdminShell
+      title="Keyword Intelligence"
+      description="Generate and maintain a prioritized SEO keyword backlog."
+    >
+      <div className="grid gap-6">
+        <Card>
           <CardHeader>
             <CardTitle>Generate Keywords</CardTitle>
-            <CardDescription>
-              Use AI to generate SEO keywords for your niche
-            </CardDescription>
+            <CardDescription>Provide a niche and let AI suggest keyword ideas.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={generateKeywords} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-foreground">
-                    Niche
-                  </label>
-                  <Input
-                    placeholder="e.g., AI tools, fitness, cooking"
-                    value={niche}
-                    onChange={(e) => setNiche(e.target.value)}
-                    disabled={generating}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground">
-                    Number of Keywords
-                  </label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={count}
-                    onChange={(e) => setCount(parseInt(e.target.value))}
-                    disabled={generating}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="submit"
-                    disabled={generating || !niche.trim()}
-                    className="w-full"
-                  >
-                    {generating ? (
-                      <>
-                        <Spinner className="mr-2 h-4 w-4" />
-                        Generating...
-                      </>
-                    ) : (
-                      'Generate Keywords'
-                    )}
-                  </Button>
-                </div>
+            <form onSubmit={generateKeywords} className="grid gap-4 md:grid-cols-5">
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium">Niche</label>
+                <Input
+                  placeholder="e.g., SaaS marketing, AI automation, local SEO"
+                  value={niche}
+                  onChange={(e) => setNiche(e.target.value)}
+                  disabled={generating}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Keyword Count</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={count}
+                  onChange={(e) => setCount(Number(e.target.value))}
+                  disabled={generating}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Mode</label>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as 'mixed' | 'standard' | 'comparison')}
+                  disabled={generating}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="mixed">Mixed</option>
+                  <option value="standard">Standard</option>
+                  <option value="comparison">Comparison (X vs Y)</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" disabled={generating || !niche.trim()} className="w-full">
+                  {generating ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Generating
+                    </>
+                  ) : (
+                    'Generate'
+                  )}
+                </Button>
               </div>
             </form>
+            {error ? (
+              <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        {/* Keywords Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Keywords List</CardTitle>
-            <CardDescription>
-              {keywords.length} keywords total
-            </CardDescription>
+            <CardTitle>Keyword Backlog</CardTitle>
+            <CardDescription>{keywords.length} records tracked</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -181,28 +167,40 @@ export default function KeywordsManager() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>ID</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Niche</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Difficulty</TableHead>
                       <TableHead>Search Volume</TableHead>
+                      <TableHead>Generated</TableHead>
                       <TableHead>Created</TableHead>
+                      <TableHead>Updated</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {keywords.map((keyword) => (
                       <TableRow key={keyword.id}>
-                        <TableCell className="font-medium">
-                          {keyword.keyword}
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {keyword.id}
                         </TableCell>
+                        <TableCell className="font-medium">{keyword.keyword}</TableCell>
                         <TableCell>{keyword.niche}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[keyword.status]}>
+                          <Badge className={statusColors[keyword.status] || 'bg-secondary text-foreground'}>
                             {keyword.status}
                           </Badge>
                         </TableCell>
+                        <TableCell>{keyword.difficulty}</TableCell>
                         <TableCell>{keyword.searchVolume}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-muted-foreground">
+                          {new Date(keyword.generatedAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
                           {new Date(keyword.createdAt).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {new Date(keyword.updatedAt).toLocaleString()}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -210,13 +208,13 @@ export default function KeywordsManager() {
                 </Table>
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No keywords yet. Generate some to get started!
+              <p className="py-8 text-center text-muted-foreground">
+                No keywords yet. Generate your first batch.
               </p>
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </div>
+    </AdminShell>
   );
 }

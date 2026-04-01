@@ -6,7 +6,88 @@ Base URL:
 http://localhost:3000/api
 ```
 
-No auth is enabled except cron secret validation on `/cron`.
+Auth:
+
+- Admin APIs require `x-admin-token` header (or `Authorization: Bearer <token>`).
+- Cron jobs still require `CRON_SECRET`.
+- Public content APIs can optionally use `CONTENT_API_KEY`.
+
+Tenant context (for multi-website usage) can be passed via:
+
+- `x-tenant-id` header or `tenantId` query param
+- `x-website-id` header or `websiteId` query param
+
+## Tenants
+
+### POST `/tenants`
+
+Create a tenant.
+
+### GET `/tenants`
+
+List tenants with active websites.
+
+## Admin Tokens
+
+### GET `/auth/me`
+
+Validate current admin token and return role/scope.
+
+### POST `/auth/tokens`
+
+Create a new admin token (owner-only).
+
+### GET `/auth/tokens`
+
+List existing admin tokens available in current auth scope.
+
+### PATCH `/auth/tokens/[id]`
+
+Activate/deactivate an existing token (owner-only).
+
+## Websites
+
+### POST `/websites`
+
+Create a website under a tenant.
+
+### GET `/websites`
+
+List websites (`tenantId` optional query param).
+
+### PATCH `/websites/[id]`
+
+Update website metadata, including optional `gscProperty`.
+
+### Website GSC OAuth
+
+### POST `/integrations/gsc/connect`
+
+Start Google OAuth for a website and return `authUrl`.
+
+Request:
+
+```json
+{
+  "websiteId": "cweb..."
+}
+```
+
+### GET `/integrations/gsc/callback`
+
+OAuth callback endpoint used by Google. It stores encrypted refresh token for the website.
+
+### POST `/integrations/gsc/disconnect`
+
+Remove website-level GSC OAuth credentials.
+
+Request:
+
+```json
+{
+  "websiteId": "cweb..."
+}
+```
 
 ## Keywords
 
@@ -19,9 +100,16 @@ Request:
 ```json
 {
   "niche": "AI tools",
-  "count": 5
+  "count": 5,
+  "mode": "mixed"
 }
 ```
+
+`mode` options:
+
+- `mixed` (default): standard + comparison intent
+- `standard`: only standard long-tail keywords
+- `comparison`: strict `X vs Y` comparison keywords
 
 Response:
 
@@ -32,11 +120,11 @@ Response:
     {
       "id": "ckw...",
       "keyword": "best ai tools for teams",
+      "niche": "ai tools",
       "difficulty": 42,
       "searchVolume": 1200,
       "generatedAt": "2026-03-31T12:00:00.000Z",
       "updatedAt": "2026-03-31T12:00:00.000Z",
-      "niche": "general",
       "status": "pending",
       "createdAt": "2026-03-31T12:00:00.000Z"
     }
@@ -58,7 +146,7 @@ Get keywords.
 Supported query params:
 
 - `status`: `pending | used` (derived from keyword-post relation)
-- `niche`: compatibility filter; mapped to keyword text match
+- `niche`: filter by stored niche
 - `q`: keyword text search
 - `minDifficulty`: number
 - `maxDifficulty`: number
@@ -77,11 +165,11 @@ Response:
     {
       "id": "ckw...",
       "keyword": "best ai tools for teams",
+      "niche": "ai tools",
       "difficulty": 42,
       "searchVolume": 1200,
       "generatedAt": "2026-03-31T12:00:00.000Z",
       "updatedAt": "2026-03-31T12:00:00.000Z",
-      "niche": "general",
       "status": "pending",
       "createdAt": "2026-03-31T12:00:00.000Z"
     }
@@ -137,7 +225,7 @@ Response:
 Status codes:
 
 - `200` success
-- `400` missing `keywordId` or `title`
+- `400` missing `keywordId` or `title`, or title above 60 chars (auto-trimmed in backend)
 - `404` keyword not found
 - `500` generation or DB error
 
@@ -211,6 +299,106 @@ Response:
 }
 ```
 
+### POST `/posts/publish-external`
+
+Push post content to an external CMS/site webhook. Draft posts can be auto-published before push.
+
+Request:
+
+```json
+{
+  "postId": "cpo...",
+  "webhookUrl": "https://example.com/api/content-ingest",
+  "publishIfDraft": true
+}
+```
+
+Notes:
+
+- `webhookUrl` is optional if `EXTERNAL_PUBLISH_WEBHOOK_URL` is set.
+- Secret header `x-webhook-secret` is sent when `EXTERNAL_PUBLISH_WEBHOOK_SECRET` exists.
+
+Response:
+
+```json
+{
+  "success": true,
+  "post": {
+    "id": "cpo...",
+    "status": "published"
+  },
+  "targetWebhook": "https://example.com/api/content-ingest",
+  "externalStatus": 200,
+  "externalResponse": "ok"
+}
+```
+
+Receiver-side implementation template is available at:
+
+- `templates/nextjs-receiver-route.md`
+
+## Public Content APIs (Pull Integration)
+
+Use these when another project needs to fetch published posts from this system.
+
+### GET `/public/posts`
+
+Query params:
+
+- `page` (default `1`)
+- `limit` (default `20`, max `100`)
+- `niche` (optional)
+- `q` (optional search)
+- `includeContent=true` (optional)
+- `apiKey` (optional if `CONTENT_API_KEY` env is set)
+
+Response:
+
+```json
+{
+  "page": 1,
+  "limit": 20,
+  "total": 2,
+  "totalPages": 1,
+  "posts": [
+    {
+      "id": "cpo...",
+      "title": "The Ultimate Guide to AI Tools",
+      "slug": "the-ultimate-guide-to-ai-tools",
+      "metaDescription": "A concise SEO description...",
+      "status": "published",
+      "publishedAt": "2026-03-31T12:10:00.000Z",
+      "createdAt": "2026-03-31T12:05:00.000Z",
+      "updatedAt": "2026-03-31T12:10:00.000Z",
+      "readingTime": 5,
+      "niche": "ai tools",
+      "keyword": "best ai tools for teams"
+    }
+  ]
+}
+```
+
+### GET `/public/posts/[slug]`
+
+Response:
+
+```json
+{
+  "id": "cpo...",
+  "title": "The Ultimate Guide to AI Tools",
+  "slug": "the-ultimate-guide-to-ai-tools",
+  "content": "# The Ultimate Guide to AI Tools\n\n...",
+  "metaDescription": "A concise SEO description...",
+  "status": "published",
+  "publishedAt": "2026-03-31T12:10:00.000Z",
+  "createdAt": "2026-03-31T12:05:00.000Z",
+  "updatedAt": "2026-03-31T12:10:00.000Z",
+  "readingTime": 5,
+  "niche": "ai tools",
+  "keyword": "best ai tools for teams"
+}
+```
+
 ## Metrics
 
 ### GET `/metrics`
@@ -231,7 +419,12 @@ Single response example:
   "postId": "cpo...",
   "backlinks": 12,
   "traffic": 1300,
+  "impressions": 1300,
+  "clicks": 65,
+  "ctr": 5,
   "ranking": 18,
+  "position": 18.2,
+  "source": "gsc",
   "fetchedAt": "2026-03-31T12:20:00.000Z",
   "updatedAt": "2026-03-31T12:20:00.000Z",
   "views": 1300,
@@ -263,9 +456,14 @@ Request (native style):
 ```json
 {
   "postId": "cpo...",
+  "impressions": 1300,
+  "clicks": 65,
+  "ctr": 5,
   "traffic": 1300,
   "backlinks": 12,
-  "ranking": 18
+  "ranking": 18,
+  "position": 18.2,
+  "source": "manual"
 }
 ```
 
@@ -288,6 +486,51 @@ Response:
     "bounceRate": 68.8,
     "createdAt": "2026-03-31T12:20:00.000Z"
   }
+}
+```
+
+### POST `/metrics/gsc`
+
+Sync real performance metrics from Google Search Console.
+
+Request:
+
+```json
+{
+  "secret": "your-cron-secret",
+  "siteUrl": "sc-domain:example.com",
+  "startDate": "2026-03-24",
+  "endDate": "2026-03-31",
+  "rowLimit": 1000
+}
+```
+
+Notes:
+
+- `secret` must match `CRON_SECRET`.
+- Access token resolution priority:
+1. `accessToken` from request body
+2. `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN` env
+3. website OAuth refresh token (if website connected via GSC OAuth)
+- `siteUrl` resolution priority:
+1. `siteUrl` from request body
+2. website `gscProperty`
+3. `GSC_SITE_URL` env
+- If dates are omitted, backend uses last 7 full days.
+
+Response:
+
+```json
+{
+  "success": true,
+  "siteUrl": "sc-domain:example.com",
+  "range": {
+    "startDate": "2026-03-24",
+    "endDate": "2026-03-31"
+  },
+  "totalRows": 312,
+  "matchedPosts": 42,
+  "updatedPosts": 40
 }
 ```
 

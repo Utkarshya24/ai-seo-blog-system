@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BarChart3, Clock3, FileText, PenSquare, Search, TrendingUp } from 'lucide-react';
+import { AdminShell } from '@/components/admin-shell';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { tenantFetch } from '@/lib/client/tenant';
 
 interface DashboardStats {
   totalKeywords: number;
@@ -12,6 +14,11 @@ interface DashboardStats {
   publishedPosts: number;
   draftPosts: number;
   avgReadingTime: number;
+}
+
+interface DashboardPost {
+  status: string;
+  readingTime?: number;
 }
 
 export default function AdminDashboard() {
@@ -31,24 +38,21 @@ export default function AdminDashboard() {
   async function fetchStats() {
     try {
       const [keywordsRes, postsRes] = await Promise.all([
-        fetch('/api/keywords/generate'),
-        fetch('/api/posts/generate'),
+        tenantFetch('/api/keywords/generate'),
+        tenantFetch('/api/posts/generate'),
       ]);
 
       const keywordsData = await keywordsRes.json();
       const postsData = await postsRes.json();
 
       const keywords = keywordsData.keywords || [];
-      const posts = postsData.posts || [];
+      const posts: DashboardPost[] = postsData.posts || [];
 
-      const publishedCount = posts.filter((p: any) => p.status === 'published').length;
-      const draftCount = posts.filter((p: any) => p.status === 'draft').length;
+      const publishedCount = posts.filter((p) => p.status === 'published').length;
+      const draftCount = posts.filter((p) => p.status === 'draft').length;
       const avgReading =
         posts.length > 0
-          ? Math.round(
-              posts.reduce((sum: number, p: any) => sum + (p.readingTime || 0), 0) /
-                posts.length
-            )
+          ? Math.round(posts.reduce((sum, p) => sum + (p.readingTime || 0), 0) / posts.length)
           : 0;
 
       setStats({
@@ -66,167 +70,105 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-secondary/50">
-        <div className="container mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage your AI SEO blog system</p>
-        </div>
-      </header>
+    <AdminShell
+      title="Dashboard Overview"
+      description="Track content pipeline, publishing health, and SEO output."
+    >
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Total Keywords</CardDescription>
+            <CardTitle className="text-3xl">{loading ? '-' : stats.totalKeywords}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <Search className="mr-1 inline h-3.5 w-3.5" />
+            Research pool size
+          </CardContent>
+        </Card>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        {/* Stats Grid */}
-        <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Keywords
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {loading ? '-' : stats.totalKeywords}
-              </div>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Total Posts</CardDescription>
+            <CardTitle className="text-3xl">{loading ? '-' : stats.totalPosts}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <FileText className="mr-1 inline h-3.5 w-3.5" />
+            All generated articles
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Posts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {loading ? '-' : stats.totalPosts}
-              </div>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Published</CardDescription>
+            <CardTitle className="text-3xl text-primary">{loading ? '-' : stats.publishedPosts}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <TrendingUp className="mr-1 inline h-3.5 w-3.5" />
+            Live on public blog
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Published
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">
-                {loading ? '-' : stats.publishedPosts}
-              </div>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Drafts</CardDescription>
+            <CardTitle className="text-3xl">{loading ? '-' : stats.draftPosts}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <PenSquare className="mr-1 inline h-3.5 w-3.5" />
+            Awaiting review/publish
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Drafts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {loading ? '-' : stats.draftPosts}
-              </div>
-            </CardContent>
-          </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Avg Reading Time</CardDescription>
+            <CardTitle className="text-3xl">{loading ? '-' : stats.avgReadingTime}m</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">
+            <Clock3 className="mr-1 inline h-3.5 w-3.5" />
+            Content depth estimate
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Avg Reading Time
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {loading ? '-' : stats.avgReadingTime} min
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Jump directly to core workflows.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <Button asChild size="lg">
+              <Link href="/admin/keywords">Generate Keywords</Link>
+            </Button>
+            <Button asChild size="lg">
+              <Link href="/admin/posts">Create Blog Post</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/admin/metrics">View SEO Metrics</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
+              <Link href="/blog">Open Public Blog</Link>
+            </Button>
+          </CardContent>
+        </Card>
 
-        {/* Tabs */}
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="keywords">Keywords</TabsTrigger>
-            <TabsTrigger value="posts">Posts</TabsTrigger>
-            <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Dashboard Overview</CardTitle>
-                <CardDescription>
-                  Quick actions and system status
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Button asChild size="lg" variant="default">
-                    <Link href="/admin/keywords">Manage Keywords</Link>
-                  </Button>
-                  <Button asChild size="lg" variant="default">
-                    <Link href="/admin/posts">Manage Posts</Link>
-                  </Button>
-                  <Button asChild size="lg" variant="outline">
-                    <Link href="/admin/metrics">View Metrics</Link>
-                  </Button>
-                  <Button asChild size="lg" variant="outline">
-                    <Link href="/blog">View Published Blog</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="keywords">
-            <Card>
-              <CardHeader>
-                <CardTitle>Keywords Management</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  <Link href="/admin/keywords" className="text-primary hover:underline">
-                    Go to Keywords Manager →
-                  </Link>
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="posts">
-            <Card>
-              <CardHeader>
-                <CardTitle>Posts Management</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  <Link href="/admin/posts" className="text-primary hover:underline">
-                    Go to Posts Manager →
-                  </Link>
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="metrics">
-            <Card>
-              <CardHeader>
-                <CardTitle>SEO Metrics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  <Link href="/admin/metrics" className="text-primary hover:underline">
-                    Go to Metrics Dashboard →
-                  </Link>
-                </p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </main>
-    </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>System Notes</CardTitle>
+            <CardDescription>Production checklist</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>1. Keep Gemini quota monitored.</p>
+            <p>2. Publish drafts regularly for metrics coverage.</p>
+            <p>3. Run `update-metrics` cron weekly.</p>
+            <p className="pt-2 text-foreground">
+              <BarChart3 className="mr-1 inline h-4 w-4" />
+              Dashboard is live and connected.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    </AdminShell>
   );
 }

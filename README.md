@@ -1,27 +1,38 @@
 # AI SEO Blog System
 
-A Next.js + Prisma blog system that generates SEO content with Google Gemini, publishes posts, and tracks SEO metrics.
+Multi-tenant AI SEO content engine for teams managing multiple websites.
 
-## Stack
+It handles:
+- keyword discovery,
+- blog drafting,
+- publishing,
+- distribution to user websites,
+- analytics feedback loop for ranking improvements.
+
+## 1) Core Capabilities
+
+1. Multi-tenant workspace (`Tenant -> Website`).
+2. Team access with token-based RBAC (`OWNER`, `EDITOR`, `VIEWER`).
+3. AI keyword generation (`standard`, `comparison`, `mixed`).
+4. AI blog generation with SEO metadata.
+5. Publish workflow (`draft -> published`).
+6. External push publish via webhook.
+7. Pull APIs for public post listing/detail.
+8. Per-website Google Search Console OAuth connection.
+9. SEO metrics ingestion (`manual`, `simulated`, `gsc`).
+10. Cron automation for recurring pipelines.
+
+## 2) Tech Stack
 
 - Next.js 16 (App Router)
-- Prisma + PostgreSQL (Neon compatible)
+- Prisma + PostgreSQL
 - Google Gemini (`@google/generative-ai`)
-- Tailwind CSS + shadcn/ui
-- `node-cron` (triggered via API endpoints)
+- Tailwind + shadcn/ui
+- node-cron (API-triggered)
 
-## Features
+## 3) Environment Setup
 
-- AI keyword generation by niche prompt
-- AI blog generation from keywords
-- Draft/publish post workflow
-- Public blog listing and detail pages
-- SEO metrics API + admin metrics dashboard
-- Manual cron job triggering via `/api/cron`
-
-## Environment
-
-Copy env file:
+Copy env:
 
 ```bash
 cp .env.example .env.local
@@ -31,22 +42,32 @@ Required variables:
 
 - `DATABASE_URL`
 - `GEMINI_API_KEY`
-- `GEMINI_MODEL` (optional, comma-separated priority list; default: `gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemini-3-flash,gemini-2.5-flash`)
 - `CRON_SECRET`
+- `ADMIN_API_TOKEN`
+- `APP_ENCRYPTION_KEY`
 - `NEXT_PUBLIC_APP_URL`
 
-## Install and Run
+Common optional variables:
 
-Using pnpm:
+- `GEMINI_MODEL`
+- `KEYWORDS_PER_NICHE`
+- `COMPARISON_KEYWORDS_PER_NICHE`
+- `BLOG_GENERATION_BATCH_SIZE`
+- `AUTO_PUBLISH_GENERATED_POSTS`
+- `BLOG_GENERATION_SCHEDULE`
+- `METRICS_UPDATE_SCHEDULE`
+- `GSC_SITE_URL`
+- `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI`
+- `DEFAULT_TENANT_ID`
+- `DEFAULT_WEBSITE_ID`
+- `EXTERNAL_PUBLISH_WEBHOOK_URL`
+- `EXTERNAL_PUBLISH_WEBHOOK_SECRET`
+- `CONTENT_API_KEY`
 
-```bash
-pnpm install
-pnpm prisma db push
-pnpm prisma generate
-pnpm dev
-```
-
-Using npm:
+## 4) Install and Run
 
 ```bash
 npm install
@@ -55,107 +76,128 @@ npx prisma generate
 npm run dev
 ```
 
-App runs at `http://localhost:3000`.
+Run app at `http://localhost:3000`.
 
-## Project Structure
+## 5) User Flow (End-to-End)
 
-```text
-app/
-  api/
-    keywords/generate/route.ts
-    posts/generate/route.ts
-    posts/publish/route.ts
-    metrics/route.ts
-    cron/route.ts
-  admin/
-  blog/
-lib/
-  ai/openai-service.ts
-  cron/cron-service.ts
-  utils/seo.ts
-  db.ts
-prisma/schema.prisma
-```
+1. Login at `/auth` using admin token.
+2. Create tenant + website from `/admin/websites`.
+3. Select workspace (tenant + website) in admin header.
+4. Generate keywords.
+5. Generate blog drafts from keywords.
+6. Publish posts.
+7. Connect website via pull or push integration.
+8. Connect Google Search Console per website from `/admin/websites`.
+9. Track metrics and run optimization cycles.
 
-## API Summary
+Detailed guide:
+- `docs/USER_WORKFLOW.md`
 
-- `POST /api/keywords/generate`
-- `GET /api/keywords/generate`
-- `POST /api/posts/generate`
-- `GET /api/posts/generate`
+## 6) Website Integration Modes
+
+1. Pull mode:
+- Your website consumes `/api/public/posts` and `/api/public/posts/[slug]`.
+
+2. Push mode:
+- Use `/api/posts/publish-external` to send content to your website webhook.
+
+3. Hybrid mode:
+- Pull for rendering and push for event-driven deployment.
+
+Integration details:
+- `docs/INTEGRATION_GUIDE.md`
+- `templates/nextjs-receiver-route.md`
+
+## 7) How SEO Ranking Is Improved
+
+System helps ranking by combining:
+
+1. intent-aligned keyword generation,
+2. consistent publish velocity,
+3. technical SEO-safe output,
+4. performance measurement and refresh loop.
+
+Detailed ranking strategy:
+- `docs/SEO_RANKING_PLAYBOOK.md`
+
+## 8) Security and Access Model
+
+1. Protected APIs require `x-admin-token` (or Bearer token).
+2. RBAC roles:
+- `OWNER`: all permissions + token management.
+- `EDITOR`: content and publish operations.
+- `VIEWER`: read-only.
+3. Tenant scoping ensures team data isolation.
+4. Public APIs can be protected using `CONTENT_API_KEY`.
+
+## 9) API Coverage
+
+Main endpoints:
+
+- `POST/GET /api/tenants`
+- `POST/GET /api/websites`
+- `GET /api/auth/me`
+- `POST/GET /api/auth/tokens`
+- `PATCH /api/auth/tokens/[id]`
+- `POST/GET /api/keywords/generate`
+- `POST/GET /api/posts/generate`
 - `PUT /api/posts/publish`
-- `GET /api/metrics`
-- `POST /api/metrics`
-- `GET /api/cron`
-- `POST /api/cron`
+- `POST /api/posts/publish-external`
+- `GET /api/public/posts`
+- `GET /api/public/posts/[slug]`
+- `GET/POST /api/metrics`
+- `POST /api/metrics/gsc`
+- `GET/POST /api/cron`
 
-Detailed examples: see `API.md`.
+Full API docs:
+- `API.md`
 
-## Current Database Schema
+## 10) Documentation Map
 
-### `Keyword`
+- Product docs UI: `/docs`
+- User workflow: `docs/USER_WORKFLOW.md`
+- Multi-tenant details: `docs/MULTI_TENANT_GUIDE.md`
+- Integration patterns: `docs/INTEGRATION_GUIDE.md`
+- Ranking playbook: `docs/SEO_RANKING_PLAYBOOK.md`
+- API details: `API.md`
 
-- `id` (cuid)
-- `keyword` (unique)
-- `difficulty` (0-100)
-- `searchVolume`
-- `generatedAt`
-- `updatedAt`
-- Relation: one keyword to many posts
+## 11) Verification
 
-### `Post`
-
-- `id` (cuid)
-- `keywordId`
-- `title`
-- `slug` (unique)
-- `content`
-- `metaDescription`
-- `status` (`draft | published | scheduled`)
-- `publishedAt`
-- `createdAt`
-- `updatedAt`
-- Relation: one post to one optional `SeoMetrics`
-
-### `SeoMetrics`
-
-- `id` (cuid)
-- `postId` (unique)
-- `backlinks`
-- `traffic`
-- `ranking`
-- `fetchedAt`
-- `updatedAt`
-
-## Compatibility Notes
-
-Some admin screens still consume legacy response keys. APIs currently expose compatibility fields:
-
-- Keywords response includes `niche`, `status`, `createdAt`
-- Metrics response includes `views`, `clicks`, `avgTimeOnPage`, `bounceRate`, `createdAt`
-- Posts response includes computed `readingTime` (not stored in DB)
-
-## Cron Jobs
-
-Defined in `lib/cron/cron-service.ts` and triggerable from `/api/cron`:
-
-- `generate-keywords`
-- `generate-blog`
-- `update-metrics`
-
-Example:
+### Lint
 
 ```bash
-curl -X POST http://localhost:3000/api/cron \
-  -H "Content-Type: application/json" \
-  -d '{ "secret": "your-cron-secret", "job": "generate-keywords" }'
+npm run lint
 ```
 
-## Troubleshooting
+### Type-check
 
-- Prisma errors: run `prisma generate` after schema changes.
-- Gemini errors: verify `GEMINI_API_KEY` and quota.
-- Cron unauthorized: ensure `CRON_SECRET` matches request.
+```bash
+npx tsc --noEmit
+```
+
+### End-to-end smoke flow
+
+Run while app is running:
+
+```bash
+npm run test:e2e-smoke
+```
+
+Smoke test validates: auth, tenant+website context, keyword generation, post generation, publish, external publish, public feed/detail, metrics flow, and GSC endpoint contract.
+
+## 12) Troubleshooting
+
+1. `401 Unauthorized` on admin APIs:
+- invalid/missing token or role mismatch.
+
+2. `401` on `/api/metrics/gsc`:
+- `secret` does not match `CRON_SECRET`.
+
+3. No public posts visible:
+- post status not `published`, wrong tenant/website scope, or API key mismatch.
+
+4. Prisma mismatch errors:
+- rerun `npx prisma db push && npx prisma generate`.
 
 ## License
 

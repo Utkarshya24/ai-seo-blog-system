@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { formatDate, generateTableOfContents } from '@/lib/utils/seo';
+import { formatDate, generateSlug, generateTableOfContents } from '@/lib/utils/seo';
 import { Metadata, ResolvingMetadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -9,6 +9,8 @@ interface BlogPostPageProps {
     slug: string;
   }>;
 }
+
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 function calculateReadingTime(content: string): number {
   return Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
@@ -32,7 +34,7 @@ async function getPost(slug: string) {
 
 export async function generateMetadata(
   { params }: BlogPostPageProps,
-  parent: ResolvingMetadata
+  _parent: ResolvingMetadata
 ): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPost(slug);
@@ -47,11 +49,20 @@ export async function generateMetadata(
     title: post.title,
     description: post.metaDescription,
     keywords: post.keyword ? [post.keyword.keyword] : [],
+    alternates: {
+      canonical: `/blog/${post.slug}`,
+    },
     openGraph: {
       title: post.title,
       description: post.metaDescription,
       type: 'article',
+      url: `${APP_URL}/blog/${post.slug}`,
       publishedTime: post.publishedAt?.toISOString(),
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.metaDescription,
     },
   };
 }
@@ -65,9 +76,57 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
   }
 
   const toc = generateTableOfContents(post.content);
+  const articleJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: post.title,
+    description: post.metaDescription,
+    datePublished: post.publishedAt?.toISOString(),
+    dateModified: post.updatedAt.toISOString(),
+    mainEntityOfPage: `${APP_URL}/blog/${post.slug}`,
+    keywords: post.keyword?.keyword ?? '',
+    author: {
+      '@type': 'Organization',
+      name: 'AI SEO Blog System',
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'AI SEO Blog System',
+      logo: {
+        '@type': 'ImageObject',
+        url: `${APP_URL}/icon-light-32x32.png`,
+      },
+    },
+  };
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Blog',
+        item: `${APP_URL}/blog`,
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: post.title,
+        item: `${APP_URL}/blog/${post.slug}`,
+      },
+    ],
+  };
 
   return (
     <main className="min-h-screen bg-background">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
       {/* Back Button */}
       <div className="border-b border-border bg-secondary/50">
         <div className="container mx-auto px-4 py-4">
@@ -136,7 +195,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             if (paragraph.startsWith('#')) {
               const level = paragraph.match(/^#+/)?.[0].length || 2;
               const text = paragraph.replace(/^#+\s/, '');
-              const id = text.toLowerCase().replace(/\s+/g, '-');
+              const id = generateSlug(text);
 
               const headingClass =
                 level === 2

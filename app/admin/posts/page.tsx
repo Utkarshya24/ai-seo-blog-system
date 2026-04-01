@@ -2,25 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { tenantFetch } from '@/lib/client/tenant';
 
 interface Post {
   id: string;
@@ -33,13 +22,22 @@ interface Post {
   keyword: { id: string; keyword: string };
 }
 
+interface KeywordOption {
+  id: string;
+  keyword: string;
+  status: string;
+}
+
 export default function PostsManager() {
   const [posts, setPosts] = useState<Post[]>([]);
-  const [keywords, setKeywords] = useState<any[]>([]);
+  const [keywords, setKeywords] = useState<KeywordOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [pushingExternalId, setPushingExternalId] = useState<string | null>(null);
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
   const [postTitle, setPostTitle] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -47,19 +45,21 @@ export default function PostsManager() {
 
   async function fetchData() {
     setLoading(true);
+    setError('');
     try {
       const [postsRes, keywordsRes] = await Promise.all([
-        fetch('/api/posts/generate'),
-        fetch('/api/keywords/generate'),
+        tenantFetch('/api/posts/generate'),
+        tenantFetch('/api/keywords/generate'),
       ]);
 
       const postsData = await postsRes.json();
       const keywordsData = await keywordsRes.json();
 
       setPosts(postsData.posts || []);
-      setKeywords(keywordsData.keywords?.filter((k: any) => k.status === 'pending') || []);
-    } catch (error) {
-      console.error('[Posts] Error fetching:', error);
+      setKeywords((keywordsData.keywords || []).filter((k: KeywordOption) => k.status === 'pending'));
+    } catch (fetchError) {
+      console.error('[Posts] Error fetching:', fetchError);
+      setError('Unable to load posts/keywords.');
     } finally {
       setLoading(false);
     }
@@ -70,8 +70,9 @@ export default function PostsManager() {
     if (!selectedKeywordId || !postTitle.trim()) return;
 
     setGenerating(true);
+    setError('');
     try {
-      const res = await fetch('/api/posts/generate', {
+      const res = await tenantFetch('/api/posts/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,20 +86,23 @@ export default function PostsManager() {
         setPosts((prev) => [data.post, ...prev]);
         setPostTitle('');
         setSelectedKeywordId('');
-        await fetchData(); // Refresh data
+        await fetchData();
       } else {
+        setError(data.error || 'Post generation failed.');
         console.error('[Posts] Generation failed:', data.error);
       }
-    } catch (error) {
-      console.error('[Posts] Error generating:', error);
+    } catch (generateError) {
+      console.error('[Posts] Error generating:', generateError);
+      setError('Unable to generate post right now.');
     } finally {
       setGenerating(false);
     }
   }
 
   async function publishPost(postId: string) {
+    setError('');
     try {
-      const res = await fetch('/api/posts/publish', {
+      const res = await tenantFetch('/api/posts/publish', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId }),
@@ -107,111 +111,141 @@ export default function PostsManager() {
       const data = await res.json();
       if (data.success) {
         setPosts((prev) =>
-          prev.map((p) =>
-            p.id === postId
-              ? { ...p, status: 'published', publishedAt: new Date().toISOString() }
-              : p
+          prev.map((post) =>
+            post.id === postId
+              ? { ...post, status: 'published', publishedAt: new Date().toISOString() }
+              : post
           )
         );
+      } else {
+        setError(data.error || 'Failed to publish post.');
       }
-    } catch (error) {
-      console.error('[Posts] Error publishing:', error);
+    } catch (publishError) {
+      console.error('[Posts] Error publishing:', publishError);
+      setError('Failed to publish post.');
+    }
+  }
+
+  async function pushPostExternally(postId: string) {
+    setError('');
+    setPushingExternalId(postId);
+    try {
+      const res = await tenantFetch('/api/posts/publish-external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId,
+          webhookUrl: webhookUrl.trim() || undefined,
+          publishIfDraft: true,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        if (data.post) {
+          setPosts((prev) =>
+            prev.map((post) =>
+              post.id === postId
+                ? {
+                    ...post,
+                    status: data.post.status,
+                    publishedAt: data.post.publishedAt,
+                  }
+                : post
+            )
+          );
+        }
+      } else {
+        setError(data.error || 'External publish failed.');
+      }
+    } catch (pushError) {
+      console.error('[Posts] Error publishing externally:', pushError);
+      setError('External publish failed.');
+    } finally {
+      setPushingExternalId(null);
     }
   }
 
   const statusColors: Record<string, string> = {
-    draft: 'bg-blue-100 text-blue-800',
-    published: 'bg-green-100 text-green-800',
+    draft: 'bg-sky-100 text-sky-800',
+    published: 'bg-emerald-100 text-emerald-800',
+    scheduled: 'bg-violet-100 text-violet-800',
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-secondary/50">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <Link href="/admin" className="text-sm text-primary hover:underline">
-                ← Back to Dashboard
-              </Link>
-              <h1 className="mt-2 text-3xl font-bold text-foreground">
-                Posts Manager
-              </h1>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        {/* Generate Blog Post Form */}
-        <Card className="mb-8">
+    <AdminShell
+      title="Post Studio"
+      description="Generate draft articles from keywords, review, and publish quickly."
+    >
+      <div className="grid gap-6">
+        <Card>
           <CardHeader>
-            <CardTitle>Generate New Blog Post</CardTitle>
-            <CardDescription>
-              Create a new blog post from an existing keyword
-            </CardDescription>
+            <CardTitle>Generate New Post</CardTitle>
+            <CardDescription>Select a pending keyword and create a draft. You can also push posts to an external webhook.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={generateBlogPost} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className="block text-sm font-medium text-foreground">
-                    Select Keyword
-                  </label>
-                  <select
-                    value={selectedKeywordId}
-                    onChange={(e) => setSelectedKeywordId(e.target.value)}
-                    disabled={generating}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2"
-                  >
-                    <option value="">Choose a keyword...</option>
-                    {keywords.map((k) => (
-                      <option key={k.id} value={k.id}>
-                        {k.keyword}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground">
-                    Post Title
-                  </label>
-                  <Input
-                    placeholder="Enter post title"
-                    value={postTitle}
-                    onChange={(e) => setPostTitle(e.target.value)}
-                    disabled={generating}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="submit"
-                    disabled={generating || !selectedKeywordId || !postTitle.trim()}
-                    className="w-full"
-                  >
-                    {generating ? (
-                      <>
-                        <Spinner className="mr-2 h-4 w-4" />
-                        Generating...
-                      </>
-                    ) : (
-                      'Generate Post'
-                    )}
-                  </Button>
-                </div>
+            <form onSubmit={generateBlogPost} className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Select Keyword</label>
+                <select
+                  value={selectedKeywordId}
+                  onChange={(e) => setSelectedKeywordId(e.target.value)}
+                  disabled={generating}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2"
+                >
+                  <option value="">Choose a keyword...</option>
+                  {keywords.map((keyword) => (
+                    <option key={keyword.id} value={keyword.id}>
+                      {keyword.keyword}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Post Title</label>
+                <Input
+                  placeholder="Enter article title"
+                  value={postTitle}
+                  onChange={(e) => setPostTitle(e.target.value)}
+                  disabled={generating}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" disabled={generating || !selectedKeywordId || !postTitle.trim()} className="w-full">
+                  {generating ? (
+                    <>
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Generating
+                    </>
+                  ) : (
+                    'Generate Draft'
+                  )}
+                </Button>
               </div>
             </form>
+            <div className="mt-4 grid gap-2 md:max-w-xl">
+              <label className="text-sm font-medium">External Webhook URL (optional override)</label>
+              <Input
+                placeholder="https://your-main-site.com/api/content-ingest"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty to use server env `EXTERNAL_PUBLISH_WEBHOOK_URL`.
+              </p>
+            </div>
+            {error ? (
+              <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
-        {/* Posts Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Blog Posts</CardTitle>
-            <CardDescription>
-              {posts.length} posts total
-            </CardDescription>
+            <CardTitle>Posts Library</CardTitle>
+            <CardDescription>{posts.length} total posts</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -234,39 +268,43 @@ export default function PostsManager() {
                   <TableBody>
                     {posts.map((post) => (
                       <TableRow key={post.id}>
-                        <TableCell className="font-medium max-w-xs truncate">
-                          <Link
-                            href={`/blog/${post.slug}`}
-                            className="text-primary hover:underline"
-                          >
+                        <TableCell className="max-w-xs font-medium">
+                          <Link href={`/blog/${post.slug}`} className="line-clamp-1 text-primary hover:underline">
                             {post.title}
                           </Link>
                         </TableCell>
                         <TableCell>{post.keyword?.keyword}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[post.status]}>
+                          <Badge className={statusColors[post.status] || 'bg-secondary text-foreground'}>
                             {post.status}
                           </Badge>
                         </TableCell>
                         <TableCell>{post.readingTime} min</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-muted-foreground">
                           {new Date(post.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          {post.status === 'draft' && (
+                          <div className="flex flex-wrap gap-2">
+                            {post.status === 'draft' ? (
+                              <Button size="sm" variant="outline" onClick={() => publishPost(post.id)}>
+                                Publish
+                              </Button>
+                            ) : null}
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => publishPost(post.id)}
+                              onClick={() => pushPostExternally(post.id)}
+                              disabled={pushingExternalId === post.id}
                             >
-                              Publish
+                              {pushingExternalId === post.id ? (
+                                <>
+                                  <Spinner className="mr-2 h-3.5 w-3.5" />
+                                  Pushing
+                                </>
+                              ) : (
+                                'Push External'
+                              )}
                             </Button>
-                          )}
-                          {post.status === 'published' && (
-                            <span className="text-xs text-muted-foreground">
-                              Published
-                            </span>
-                          )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -274,13 +312,13 @@ export default function PostsManager() {
                 </Table>
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No posts yet. Generate some to get started!
+              <p className="py-8 text-center text-muted-foreground">
+                No posts yet. Start by generating a draft.
               </p>
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </div>
+    </AdminShell>
   );
 }

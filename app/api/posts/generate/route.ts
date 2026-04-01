@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { generateBlogPost, generateMetaDescription } from '@/lib/ai/openai-service';
-import { generateSlug } from '@/lib/utils/seo';
+import { generateSlug, isValidSeoTitle, SEO_TITLE_MAX_LENGTH, toSeoTitle } from '@/lib/utils/seo';
+import { requireAdminAuth } from '@/lib/auth/admin-auth';
+import { resolveTenantContext } from '@/lib/tenant-context';
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -38,12 +41,23 @@ async function generateUniqueSlug(title: string): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAdminAuth(request, AdminRole.EDITOR);
+    if (!authResult.ok) return authResult.response;
+    const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
     const body = await request.json();
     const { keywordId, title, tone = 'professional' } = body;
 
     if (!keywordId || !title) {
       return NextResponse.json(
         { error: 'keywordId and title are required' },
+        { status: 400 }
+      );
+    }
+
+    const normalizedTitle = toSeoTitle(String(title));
+    if (!isValidSeoTitle(normalizedTitle)) {
+      return NextResponse.json(
+        { error: `Title must be between 1 and ${SEO_TITLE_MAX_LENGTH} characters.` },
         { status: 400 }
       );
     }
@@ -59,11 +73,17 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+    if (tenantId && keyword.tenantId && keyword.tenantId !== tenantId) {
+      return NextResponse.json({ error: 'Keyword does not belong to tenant' }, { status: 403 });
+    }
+    if (websiteId && keyword.websiteId && keyword.websiteId !== websiteId) {
+      return NextResponse.json({ error: 'Keyword does not belong to website' }, { status: 403 });
+    }
 
     // Generate blog content
     const content = await generateBlogPost({
       keyword: keyword.keyword,
-      title,
+      title: normalizedTitle,
       tone,
     });
 
@@ -75,16 +95,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate meta description
-    const metaDescription = await generateMetaDescription(title, content);
+    const metaDescription = await generateMetaDescription(normalizedTitle, content);
 
     // Create post in database
-    const slug = await generateUniqueSlug(title);
+    const slug = await generateUniqueSlug(normalizedTitle);
     const post = await prisma.post.create({
       data: {
-        title,
+        title: normalizedTitle,
         content,
         slug,
         keywordId,
+        tenantId,
+        websiteId,
         metaDescription,
         status: 'draft',
       },
@@ -111,12 +133,17 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireAdminAuth(request, AdminRole.VIEWER);
+    if (!authResult.ok) return authResult.response;
+    const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || undefined;
     const keywordId = searchParams.get('keywordId') || undefined;
 
     const posts = await prisma.post.findMany({
       where: {
+        ...(tenantId && { tenantId }),
+        ...(websiteId && { websiteId }),
         ...(status && { status }),
         ...(keywordId && { keywordId }),
       },

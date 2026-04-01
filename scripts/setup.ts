@@ -44,6 +44,7 @@ async function main() {
           await prisma.keyword.create({
             data: {
               keyword,
+              niche,
               difficulty: Math.floor(Math.random() * 101),
               searchVolume: Math.floor(Math.random() * 5000) + 100,
             },

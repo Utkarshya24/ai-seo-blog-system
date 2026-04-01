@@ -1,5 +1,7 @@
 import slugify from 'slugify';
 
+export const SEO_TITLE_MAX_LENGTH = 60;
+
 export interface MetaTags {
   title: string;
   description: string;
@@ -18,6 +20,29 @@ export function generateSlug(text: string): string {
     strict: true,
     trim: true,
   });
+}
+
+/**
+ * Validate SEO title length for stronger SERP display quality
+ */
+export function isValidSeoTitle(title: string): boolean {
+  const normalized = title.trim();
+  return normalized.length > 0 && normalized.length <= SEO_TITLE_MAX_LENGTH;
+}
+
+/**
+ * Safely trim a title to SEO length limit without cutting words abruptly
+ */
+export function toSeoTitle(title: string): string {
+  const normalized = title.trim().replace(/\s+/g, ' ');
+  if (normalized.length <= SEO_TITLE_MAX_LENGTH) return normalized;
+
+  const clipped = normalized.slice(0, SEO_TITLE_MAX_LENGTH);
+  const boundary = clipped.lastIndexOf(' ');
+  if (boundary > 20) {
+    return clipped.slice(0, boundary).trim();
+  }
+  return clipped.trim();
 }
 
 /**

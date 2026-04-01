@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { generateKeywords } from '@/lib/ai/openai-service';
+import { generateComparisonKeywords, generateKeywords } from '@/lib/ai/openai-service';
+import { requireAdminAuth } from '@/lib/auth/admin-auth';
+import { resolveTenantContext } from '@/lib/tenant-context';
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -22,24 +25,30 @@ function getUserFacingError(error: unknown): string {
 function formatKeywordForResponse(keyword: {
   id: string;
   keyword: string;
+  niche: string;
   difficulty: number;
   searchVolume: number;
   generatedAt: Date;
   updatedAt: Date;
+  posts?: Array<{ id: string }>;
 }) {
+  const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
+
   return {
     ...keyword,
     // Backward-compatible fields expected by existing admin UI.
-    niche: 'general',
-    status: 'pending',
+    status: derivedStatus,
     createdAt: keyword.generatedAt,
   };
 }
 
 export async function POST(request: NextRequest) {
   try {
+    const authResult = await requireAdminAuth(request, AdminRole.EDITOR);
+    if (!authResult.ok) return authResult.response;
+    const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
     const body = await request.json();
-    const { niche, count = 5 } = body;
+    const { niche, count = 5, mode = 'mixed' } = body;
 
     if (!niche) {
       return NextResponse.json(
@@ -48,8 +57,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate keywords using OpenAI
-    const keywords = await generateKeywords({ niche, count });
+    // Generate keywords using Gemini
+    let keywords: string[] = [];
+    if (mode === 'comparison') {
+      keywords = await generateComparisonKeywords({ niche, count });
+    } else if (mode === 'standard') {
+      keywords = await generateKeywords({ niche, count, includeComparison: false });
+    } else {
+      keywords = await generateKeywords({ niche, count, includeComparison: true });
+    }
 
     if (keywords.length === 0) {
       return NextResponse.json(
@@ -60,20 +76,35 @@ export async function POST(request: NextRequest) {
 
     // Save keywords to database (upsert avoids failures on duplicate unique keywords)
     const savedKeywords = await Promise.all(
-      keywords.map((keyword) =>
-        prisma.keyword.upsert({
-          where: { keyword },
-          update: {
-            searchVolume: Math.floor(Math.random() * 5000) + 100,
-            updatedAt: new Date(),
-          },
-          create: {
+      keywords.map(async (keyword) => {
+        const existing = await prisma.keyword.findFirst({
+          where: { keyword, websiteId },
+        });
+
+        if (existing) {
+          return prisma.keyword.update({
+            where: { id: existing.id },
+            data: {
+              niche,
+              tenantId,
+              websiteId,
+              searchVolume: Math.floor(Math.random() * 5000) + 100,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        return prisma.keyword.create({
+          data: {
             keyword,
+            niche,
+            tenantId,
+            websiteId,
             difficulty: Math.floor(Math.random() * 101), // Placeholder 0-100
             searchVolume: Math.floor(Math.random() * 5000) + 100, // Placeholder
           },
-        })
-      )
+        });
+      })
     );
 
     return NextResponse.json({
@@ -92,6 +123,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const authResult = await requireAdminAuth(request, AdminRole.VIEWER);
+    if (!authResult.ok) return authResult.response;
+    const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || undefined;
     const niche = searchParams.get('niche') || undefined;
@@ -101,9 +135,11 @@ export async function GET(request: NextRequest) {
 
     const keywords = await prisma.keyword.findMany({
       where: {
+        ...(tenantId && { tenantId }),
+        ...(websiteId && { websiteId }),
         ...(status === 'pending' && { posts: { none: {} } }),
         ...(status === 'used' && { posts: { some: {} } }),
-        ...(niche && { keyword: { contains: niche, mode: 'insensitive' } }),
+        ...(niche && { niche: { contains: niche, mode: 'insensitive' } }),
         ...(q && { keyword: { contains: q, mode: 'insensitive' } }),
         ...((minDifficulty || maxDifficulty) && {
           difficulty: {
@@ -111,6 +147,12 @@ export async function GET(request: NextRequest) {
             ...(maxDifficulty && { lte: Number(maxDifficulty) }),
           },
         }),
+      },
+      include: {
+        posts: {
+          select: { id: true },
+          take: 1,
+        },
       },
       orderBy: { generatedAt: 'desc' },
       take: 50,

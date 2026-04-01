@@ -28,12 +28,12 @@ export async function POST(request: NextRequest) {
 
       case 'generate-blog':
         await weeklyBlogGenerationJob.task();
-        result = 'Weekly blog generation completed';
+        result = 'Blog generation completed';
         break;
 
       case 'update-metrics':
         await weeklyMetricsUpdateJob.task();
-        result = 'Weekly metrics update completed';
+        result = 'Metrics update completed';
         break;
 
       default:
@@ -89,12 +89,12 @@ export async function GET(request: NextRequest) {
 
       case 'generate-blog':
         await weeklyBlogGenerationJob.task();
-        result = 'Weekly blog generation completed';
+        result = 'Blog generation completed';
         break;
 
       case 'update-metrics':
         await weeklyMetricsUpdateJob.task();
-        result = 'Weekly metrics update completed';
+        result = 'Metrics update completed';
         break;
 
       default:

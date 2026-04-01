@@ -10,23 +10,80 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Keyword {
+enum AdminRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+model Tenant {
   id        String   @id @default(cuid())
-  keyword   String   @unique
-  difficulty Int     @default(0) // SEO difficulty score 0-100
-  searchVolume Int   @default(0)
-  generatedAt DateTime @default(now())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  websites  Website[]
+  keywords  Keyword[]
+  posts     Post[]
+  seoMetrics SeoMetrics[]
+  adminTokens AdminToken[]
+}
+
+model Website {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name       String
+  domain     String
+  baseUrl    String
+  niche      String   @default("general")
+  gscProperty String?
+  gscRefreshTokenEnc String?
+  gscConnectedAt DateTime?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  keywords   Keyword[]
+  posts      Post[]
+  seoMetrics SeoMetrics[]
+
+  @@index([tenantId])
+  @@index([domain])
+  @@unique([tenantId, domain])
+}
+
+model Keyword {
+  id         String    @id @default(cuid())
+  tenantId   String?
+  websiteId  String?
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  website    Website?  @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  keyword    String
+  niche      String    @default("general")
+  difficulty Int       @default(0) // SEO difficulty score 0-100
+  searchVolume Int     @default(0)
+  generatedAt DateTime @default(now())
+  updatedAt DateTime   @updatedAt
   
   posts Post[]
 
   @@index([keyword])
+  @@index([niche])
+  @@index([tenantId])
+  @@index([websiteId])
+  @@unique([keyword, websiteId])
 }
 
 model Post {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
+  tenantId  String?
+  websiteId String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  website   Website?  @relation(fields: [websiteId], references: [id], onDelete: SetNull)
   keywordId String
-  keyword   Keyword  @relation(fields: [keywordId], references: [id], onDelete: Cascade)
+  keyword   Keyword   @relation(fields: [keywordId], references: [id], onDelete: Cascade)
   
   title     String
   slug      String   @unique
@@ -40,22 +97,51 @@ model Post {
   
   seoMetrics SeoMetrics?
 
+  @@index([tenantId])
+  @@index([websiteId])
   @@index([keywordId])
   @@index([slug])
   @@index([status])
 }
 
 model SeoMetrics {
-  id        String   @id @default(cuid())
-  postId    String   @unique
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id        String    @id @default(cuid())
+  tenantId  String?
+  websiteId String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  website   Website?  @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  postId    String    @unique
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   
   backlinks Int      @default(0)
   traffic   Int      @default(0)
+  impressions Int    @default(0)
+  clicks    Int      @default(0)
+  ctr       Float    @default(0)
   ranking   Int      @default(0)
+  position  Float    @default(0)
+  source    String   @default("manual")
   
   fetchedAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([tenantId])
+  @@index([websiteId])
   @@index([postId])
+}
+
+model AdminToken {
+  id        String    @id @default(cuid())
+  name      String
+  tokenHash String    @unique
+  lastFour  String
+  role      AdminRole @default(OWNER)
+  tenantId  String?
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([isActive])
 }

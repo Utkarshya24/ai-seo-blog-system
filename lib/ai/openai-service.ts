@@ -105,6 +105,7 @@ async function generateText(prompt: string): Promise<string> {
 export interface KeywordPrompt {
   niche: string;
   count?: number;
+  includeComparison?: boolean;
 }
 
 export interface BlogPrompt {
@@ -118,12 +119,15 @@ export interface BlogPrompt {
  * Generate SEO keywords for a given niche
  */
 export async function generateKeywords(prompt: KeywordPrompt): Promise<string[]> {
-  const { niche, count = 5 } = prompt;
+  const { niche, count = 5, includeComparison = false } = prompt;
 
   try {
     const systemPrompt =
       'You are an SEO expert. Generate high-quality, long-tail keywords that are relevant and have good search volume. Return only the keywords as a JSON array of strings.';
-    const userPrompt = `Generate ${count} SEO-friendly keywords for the niche: "${niche}". Return as JSON array.`;
+    const comparisonInstruction = includeComparison
+      ? 'At least half of the keywords must be comparison intent and include "vs" between two alternatives.'
+      : '';
+    const userPrompt = `Generate ${count} SEO-friendly keywords for the niche: "${niche}". ${comparisonInstruction} Return as JSON array.`;
 
     const content = await generateText(`${systemPrompt}\n\n${userPrompt}`);
 
@@ -138,6 +142,33 @@ export async function generateKeywords(prompt: KeywordPrompt): Promise<string[]>
     return [];
   } catch (error) {
     console.error('[AI Service] Error generating keywords:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate comparison intent keywords in "X vs Y" format
+ */
+export async function generateComparisonKeywords(prompt: KeywordPrompt): Promise<string[]> {
+  const { niche, count = 5 } = prompt;
+
+  try {
+    const systemPrompt =
+      'You are an SEO strategist focused on high-intent comparison queries. Return only a JSON array of strings.';
+    const userPrompt = `Generate ${count} comparison keywords for "${niche}" in strict "X vs Y" format. Keep them realistic for search intent. Return as JSON array.`;
+    const content = await generateText(`${systemPrompt}\n\n${userPrompt}`);
+
+    if (!content) return [];
+
+    const jsonMatch = content.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]) as string[];
+    return parsed
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0 && /\bvs\b/i.test(item));
+  } catch (error) {
+    console.error('[AI Service] Error generating comparison keywords:', error);
     throw error;
   }
 }
