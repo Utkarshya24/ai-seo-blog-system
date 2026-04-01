@@ -572,6 +572,61 @@ Two actions are supported:
 }
 ```
 
+## AI Visibility Tracker
+
+### GET `/ai-visibility/mentions`
+
+List AI mention records in current tenant/website scope.
+
+Query params:
+- `days` (default `30`)
+- `provider` (optional)
+- `q` (optional query text filter)
+
+### POST `/ai-visibility/mentions`
+
+Ingest mentions (single or batch).
+
+Request:
+
+```json
+{
+  "mentions": [
+    {
+      "provider": "CHATGPT",
+      "query": "best ai seo tools",
+      "citedUrl": "https://example.com/blog/seo-guide",
+      "sourceUrl": "https://chat.openai.com/...",
+      "rank": 1,
+      "snippet": "Example citation snippet..."
+    }
+  ]
+}
+```
+
+### GET `/ai-visibility/summary`
+
+Returns citation share summary in selected window.
+
+Response example:
+
+```json
+{
+  "windowDays": 30,
+  "totalMentions": 120,
+  "citedMentions": 24,
+  "citationRate": 20,
+  "targetHost": "example.com",
+  "providerBreakdown": {
+    "CHATGPT": 70,
+    "PERPLEXITY": 50
+  },
+  "topQueries": [
+    { "query": "best ai seo tools", "count": 18 }
+  ]
+}
+```
+
 Request (native style):
 
 ```json

@@ -27,6 +27,14 @@ enum ExperimentVariant {
   B
 }
 
+enum AiProvider {
+  CHATGPT
+  PERPLEXITY
+  GEMINI
+  CLAUDE
+  OTHER
+}
+
 model Tenant {
   id        String   @id @default(cuid())
   name      String
@@ -59,6 +67,7 @@ model Website {
   keywords   Keyword[]
   posts      Post[]
   seoMetrics SeoMetrics[]
+  aiMentions AiVisibilityMention[]
 
   @@index([tenantId])
   @@index([domain])
@@ -139,6 +148,26 @@ model SerpExperiment {
 
   @@index([postId, status])
   @@index([tenantId, websiteId, status])
+}
+
+model AiVisibilityMention {
+  id         String     @id @default(cuid())
+  tenantId   String?
+  websiteId  String?
+  website    Website?   @relation(fields: [websiteId], references: [id], onDelete: SetNull)
+  provider   AiProvider
+  query      String
+  sourceUrl  String?
+  citedUrl   String
+  rank       Int?
+  snippet    String?
+  detectedAt DateTime   @default(now())
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([tenantId, websiteId, detectedAt])
+  @@index([provider, detectedAt])
+  @@index([query])
 }
 
 model SeoMetrics {

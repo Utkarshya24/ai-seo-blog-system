@@ -23,6 +23,7 @@ It handles:
 10. Cron automation for recurring pipelines.
 11. Internal link opportunity detection + auto-link insertion assistant.
 12. SERP A/B testing (title/meta variants) with winner selection and apply flow.
+13. AI visibility tracker for ChatGPT/Perplexity citations (mentions + share).
 
 ## 2) Tech Stack
 
@@ -149,6 +150,8 @@ Main endpoints:
 - `GET /api/public/posts/[slug]`
 - `GET/POST /api/metrics`
 - `POST /api/metrics/gsc`
+- `GET/POST /api/ai-visibility/mentions`
+- `GET /api/ai-visibility/summary`
 - `GET/POST /api/cron`
 
 Full API docs:
