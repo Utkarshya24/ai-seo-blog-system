@@ -7,9 +7,9 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       {/* Navigation */}
       <nav className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <h1 className="text-2xl font-bold text-foreground">AI SEO Blog</h1>
-          <div className="flex gap-4">
+        <div className="container mx-auto flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">AI SEO Blog</h1>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:gap-3">
             <Button asChild variant="ghost">
               <Link href="/blog">Blog</Link>
             </Button>
@@ -27,12 +27,12 @@ export default function Home() {
       </nav>
 
       {/* Hero Section */}
-      <section className="container mx-auto px-4 py-20 text-center">
+      <section className="container mx-auto px-4 py-14 text-center sm:py-20">
         <div className="mx-auto max-w-3xl space-y-6">
-          <h2 className="text-5xl font-bold text-foreground md:text-6xl">
+          <h2 className="text-4xl font-bold text-foreground sm:text-5xl md:text-6xl">
             AI-Powered SEO Blog System
           </h2>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-base text-muted-foreground sm:text-xl">
             Generate, manage, and optimize SEO-friendly blog content with AI. Automate keyword research, content creation, and performance tracking.
           </p>
 
@@ -152,7 +152,7 @@ export default function Home() {
           <h3 className="text-3xl font-bold text-foreground">How It Works</h3>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-4">
+        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
           <div className="space-y-4 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white mx-auto">
               1

@@ -131,9 +131,9 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/40">
+    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background">
       <div className="mx-auto flex max-w-[1400px]">
-        <aside className="hidden w-72 border-r border-border/70 bg-card/70 p-6 backdrop-blur md:block">
+        <aside className="hidden w-72 border-r border-border/70 bg-card/80 p-6 backdrop-blur md:block">
           <Link href="/admin" className="mb-8 flex items-center gap-3">
             <div className="rounded-lg bg-primary/10 p-2 text-primary">
               <Sparkles className="h-5 w-5" />
@@ -193,7 +193,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
 
         <div className="flex-1">
           <header className="sticky top-0 z-20 border-b border-border/70 bg-background/90 px-4 py-4 backdrop-blur md:px-8">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="flex items-start gap-3">
                 <Sheet>
                   <SheetTrigger asChild>
@@ -260,18 +260,19 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                     </div>
                   </SheetContent>
                 </Sheet>
-                <p className="text-sm text-muted-foreground">Admin Workspace</p>
                 <div>
-                  <h1 className="text-2xl font-semibold">{title}</h1>
+                  <p className="text-sm text-muted-foreground">Admin Workspace</p>
+                  <h1 className="text-xl font-semibold sm:text-2xl">{title}</h1>
                   <p className="text-sm text-muted-foreground">{description}</p>
                   {activeWebsite ? (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Active website: <span className="font-medium text-foreground">{activeWebsite.name}</span> ({activeWebsite.domain})
+                      Active website: <span className="font-medium text-foreground">{activeWebsite.name}</span>{' '}
+                      ({activeWebsite.domain})
                     </p>
                   ) : null}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:w-auto xl:grid-cols-4">
                 <input
                   type="password"
                   placeholder="Admin token"
@@ -281,7 +282,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                     setAdminToken(value);
                     setStoredAdminToken(value || null);
                   }}
-                  className="h-9 w-44 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
                 />
                 <select
                   value={selectedTenant}
@@ -290,7 +291,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                     setSelectedTenant(value);
                     setStoredTenantId(value);
                   }}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
                 >
                   {tenants.length === 0 ? <option value="">No tenants</option> : null}
                   {tenants.map((tenant) => (
@@ -306,7 +307,7 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                     setSelectedWebsite(value);
                     setStoredWebsiteId(value || null);
                   }}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
                 >
                   {websites.length === 0 ? <option value="">No websites</option> : null}
                   {websites.map((website) => (
@@ -315,20 +316,20 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
                     </option>
                   ))}
                 </select>
-                <Button variant="outline" onClick={() => router.back()}>
+                <Button variant="outline" onClick={() => router.back()} className="w-full xl:w-auto">
                   <ArrowLeft className="mr-2 h-4 w-4" />
                   Back
                 </Button>
-                <Button asChild variant="outline">
+                <Button asChild variant="outline" className="w-full xl:w-auto">
                   <Link href="/admin">Dashboard</Link>
                 </Button>
-                <Button asChild variant="outline">
+                <Button asChild variant="outline" className="w-full xl:w-auto">
                   <Link href="/docs">
                     <BookOpen className="mr-2 h-4 w-4" />
                     Docs
                   </Link>
                 </Button>
-                <Button variant="destructive" onClick={logout}>
+                <Button variant="destructive" onClick={logout} className="w-full xl:w-auto">
                   <LogOut className="mr-2 h-4 w-4" />
                   Logout
                 </Button>

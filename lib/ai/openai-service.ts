@@ -115,6 +115,16 @@ export interface BlogPrompt {
   maxTokens?: number;
 }
 
+export interface SerpOptimizationInput {
+  keyword: string;
+  currentTitle: string;
+  currentMetaDescription: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  position?: number;
+}
+
 /**
  * Generate SEO keywords for a given niche
  */
@@ -222,4 +232,58 @@ export async function generateMetaDescription(title: string, content: string): P
     console.error('[AI Service] Error generating meta description:', error);
     throw error;
   }
+}
+
+export async function generateSerpOptimization(
+  input: SerpOptimizationInput
+): Promise<{ title: string; metaDescription: string; reasoning: string }> {
+  const {
+    keyword,
+    currentTitle,
+    currentMetaDescription,
+    impressions,
+    clicks,
+    ctr,
+    position,
+  } = input;
+
+  const systemPrompt =
+    'You are an SEO CRO specialist. Improve SERP CTR while preserving search intent. Return strict JSON with keys: title, metaDescription, reasoning.';
+  const userPrompt = `
+Keyword: ${keyword}
+Current title: ${currentTitle}
+Current meta description: ${currentMetaDescription}
+Impressions: ${impressions}
+Clicks: ${clicks}
+CTR (%): ${ctr}
+Average position: ${position ?? 0}
+
+Rules:
+- Title <= 60 chars.
+- Meta description between 140 and 160 chars.
+- Keep primary keyword naturally in title and meta.
+- Avoid clickbait and false claims.
+- Provide concise reasoning.
+`;
+
+  const raw = await generateText(`${systemPrompt}\n\n${userPrompt}`);
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('Failed to parse SERP optimization JSON response.');
+  }
+  const parsed = JSON.parse(jsonMatch[0]) as {
+    title?: string;
+    metaDescription?: string;
+    reasoning?: string;
+  };
+
+  const title = (parsed.title || currentTitle).trim().slice(0, 60);
+  const metaRaw = (parsed.metaDescription || currentMetaDescription).trim();
+  const metaDescription = metaRaw.length > 160 ? metaRaw.slice(0, 160) : metaRaw;
+
+  return {
+    title,
+    metaDescription,
+    reasoning: (parsed.reasoning || 'Updated for stronger SERP clarity and relevance.').trim(),
+  };
 }

@@ -26,9 +26,25 @@ interface Post {
   slug: string;
 }
 
+interface Opportunity {
+  postId: string;
+  title: string;
+  slug: string;
+  keyword: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  position: number;
+  severity: 'high' | 'medium' | 'low';
+  missedClicks: number;
+}
+
 export default function MetricsDashboard() {
   const [metrics, setMetrics] = useState<Metrics[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [optimizingPostId, setOptimizingPostId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -48,10 +64,42 @@ export default function MetricsDashboard() {
 
       setMetrics(metricsData.metrics || []);
       setPosts(postsData.posts || []);
+
+      const oppRes = await tenantFetch('/api/seo/opportunities');
+      if (oppRes.ok) {
+        const oppData = await oppRes.json();
+        setOpportunities(oppData.opportunities || []);
+      } else {
+        setOpportunities([]);
+      }
     } catch (error) {
       console.error('[Metrics] Error fetching:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function optimizeSerp(postId: string) {
+    setOptimizingPostId(postId);
+    setMessage('');
+    try {
+      const res = await tenantFetch('/api/posts/optimize-serp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error || 'Optimization failed.');
+        return;
+      }
+      setMessage('SERP optimization applied. Refreshing metrics list...');
+      await fetchData();
+    } catch (error) {
+      console.error('[Metrics] optimizeSerp error:', error);
+      setMessage('Optimization failed due to network/server issue.');
+    } finally {
+      setOptimizingPostId(null);
     }
   }
 
@@ -181,6 +229,71 @@ export default function MetricsDashboard() {
             <p className="py-8 text-center text-muted-foreground">
               No metrics yet. Publish posts and run metrics updates.
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>CTR Opportunities</CardTitle>
+          <CardDescription>High-impression pages where title/meta updates can win more clicks.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {message ? (
+            <p className="mb-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+              {message}
+            </p>
+          ) : null}
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : opportunities.length === 0 ? (
+            <p className="py-6 text-sm text-muted-foreground">No immediate CTR opportunities detected.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Post</TableHead>
+                    <TableHead>Keyword</TableHead>
+                    <TableHead>Impr.</TableHead>
+                    <TableHead>CTR</TableHead>
+                    <TableHead>Pos.</TableHead>
+                    <TableHead>Potential Clicks</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {opportunities.slice(0, 20).map((opportunity) => (
+                    <TableRow key={opportunity.postId}>
+                      <TableCell className="max-w-xs font-medium">
+                        <Link href={`/blog/${opportunity.slug}`} className="line-clamp-1 text-primary hover:underline">
+                          {opportunity.title}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="max-w-[180px] truncate">{opportunity.keyword}</TableCell>
+                      <TableCell>{opportunity.impressions.toLocaleString()}</TableCell>
+                      <TableCell>{opportunity.ctr.toFixed(2)}%</TableCell>
+                      <TableCell>{opportunity.position.toFixed(1)}</TableCell>
+                      <TableCell>+{opportunity.missedClicks}</TableCell>
+                      <TableCell className="uppercase">{opportunity.severity}</TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => optimizeSerp(opportunity.postId)}
+                          disabled={optimizingPostId === opportunity.postId}
+                        >
+                          {optimizingPostId === opportunity.postId ? 'Optimizing...' : 'Optimize SERP'}
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

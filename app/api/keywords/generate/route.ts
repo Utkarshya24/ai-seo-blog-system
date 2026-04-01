@@ -22,6 +22,48 @@ function getUserFacingError(error: unknown): string {
   return error instanceof Error ? error.message : 'Failed to generate keywords';
 }
 
+type KeywordIntent = 'informational' | 'comparison' | 'commercial' | 'transactional';
+
+function estimateIntent(keyword: string): KeywordIntent {
+  const text = keyword.toLowerCase();
+  if (/\b(vs|versus|alternative|compare)\b/.test(text)) return 'comparison';
+  if (/\b(price|pricing|buy|best|top|review|reviews)\b/.test(text)) return 'commercial';
+  if (/\b(sign up|template|download|tool|software)\b/.test(text)) return 'transactional';
+  return 'informational';
+}
+
+function estimateDifficulty(keyword: string): number {
+  const words = keyword.trim().split(/\s+/).length;
+  const hasBrand = /\b(google|facebook|openai|apple|amazon|microsoft)\b/i.test(keyword);
+  let score = 35 + Math.max(0, 6 - words) * 8;
+  if (hasBrand) score += 8;
+  return Math.min(95, Math.max(12, score));
+}
+
+function estimateSearchVolume(keyword: string, intent: KeywordIntent): number {
+  const base = Math.max(120, 2200 - keyword.length * 20);
+  if (intent === 'comparison') return Math.round(base * 1.15);
+  if (intent === 'commercial') return Math.round(base * 1.1);
+  return Math.round(base);
+}
+
+function calculatePriorityScore(params: {
+  difficulty: number;
+  searchVolume: number;
+  intent: KeywordIntent;
+  used: boolean;
+}) {
+  const { difficulty, searchVolume, intent, used } = params;
+  const intentBonus =
+    intent === 'comparison' ? 12 : intent === 'commercial' ? 10 : intent === 'transactional' ? 8 : 6;
+  const score =
+    Math.max(0, 100 - difficulty) * 0.5 +
+    Math.min(100, Math.log10(Math.max(10, searchVolume)) * 25) * 0.4 +
+    intentBonus -
+    (used ? 25 : 0);
+  return Math.max(0, Math.min(100, Number(score.toFixed(1))));
+}
+
 function formatKeywordForResponse(keyword: {
   id: string;
   keyword: string;
@@ -33,9 +75,18 @@ function formatKeywordForResponse(keyword: {
   posts?: Array<{ id: string }>;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
+  const intent = estimateIntent(keyword.keyword);
+  const priorityScore = calculatePriorityScore({
+    difficulty: keyword.difficulty,
+    searchVolume: keyword.searchVolume,
+    intent,
+    used: derivedStatus === 'used',
+  });
 
   return {
     ...keyword,
+    intent,
+    priorityScore,
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -77,6 +128,9 @@ export async function POST(request: NextRequest) {
     // Save keywords to database (upsert avoids failures on duplicate unique keywords)
     const savedKeywords = await Promise.all(
       keywords.map(async (keyword) => {
+        const intent = estimateIntent(keyword);
+        const difficulty = estimateDifficulty(keyword);
+        const searchVolume = estimateSearchVolume(keyword, intent);
         const existing = await prisma.keyword.findFirst({
           where: { keyword, websiteId },
         });
@@ -88,7 +142,8 @@ export async function POST(request: NextRequest) {
               niche,
               tenantId,
               websiteId,
-              searchVolume: Math.floor(Math.random() * 5000) + 100,
+              difficulty,
+              searchVolume,
               updatedAt: new Date(),
             },
           });
@@ -100,8 +155,8 @@ export async function POST(request: NextRequest) {
             niche,
             tenantId,
             websiteId,
-            difficulty: Math.floor(Math.random() * 101), // Placeholder 0-100
-            searchVolume: Math.floor(Math.random() * 5000) + 100, // Placeholder
+            difficulty,
+            searchVolume,
           },
         });
       })
@@ -158,7 +213,9 @@ export async function GET(request: NextRequest) {
       take: 50,
     });
 
-    return NextResponse.json({ keywords: keywords.map(formatKeywordForResponse) });
+    const formatted = keywords.map(formatKeywordForResponse);
+    formatted.sort((a, b) => b.priorityScore - a.priorityScore);
+    return NextResponse.json({ keywords: formatted });
   } catch (error) {
     console.error('[API] Error fetching keywords:', error);
     return NextResponse.json(

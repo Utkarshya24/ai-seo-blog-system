@@ -169,7 +169,7 @@ export default function PostsManager() {
   const statusColors: Record<string, string> = {
     draft: 'bg-sky-100 text-sky-800',
     published: 'bg-emerald-100 text-emerald-800',
-    scheduled: 'bg-violet-100 text-violet-800',
+    scheduled: 'bg-sky-100 text-sky-800',
   };
 
   return (

@@ -126,6 +126,8 @@ Response:
       "generatedAt": "2026-03-31T12:00:00.000Z",
       "updatedAt": "2026-03-31T12:00:00.000Z",
       "status": "pending",
+      "intent": "comparison",
+      "priorityScore": 78.5,
       "createdAt": "2026-03-31T12:00:00.000Z"
     }
   ],
@@ -283,6 +285,34 @@ Request:
 ```json
 {
   "postId": "cpo..."
+}
+```
+
+### POST `/posts/optimize-serp`
+
+AI-powered title/meta optimization for CTR improvement.
+
+Request:
+
+```json
+{
+  "postId": "cpo..."
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "post": {
+    "id": "cpo...",
+    "title": "Improved SEO Title",
+    "metaDescription": "Updated CTR-focused description..."
+  },
+  "optimization": {
+    "reasoning": "Updated for stronger SERP clarity and intent match."
+  }
 }
 ```
 
@@ -450,6 +480,12 @@ Request (compatibility style):
   "clicks": 65
 }
 ```
+
+## SEO Opportunities
+
+### GET `/seo/opportunities`
+
+Returns ranked list of low-CTR, high-impression posts with estimated click upside.
 
 Request (native style):
 

@@ -15,6 +15,8 @@ interface Keyword {
   keyword: string;
   niche: string;
   status: string;
+  intent?: 'informational' | 'comparison' | 'commercial' | 'transactional';
+  priorityScore?: number;
   difficulty: number;
   searchVolume: number;
   generatedAt: string;
@@ -171,6 +173,8 @@ export default function KeywordsManager() {
                       <TableHead>Keyword</TableHead>
                       <TableHead>Niche</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Intent</TableHead>
+                      <TableHead>Priority</TableHead>
                       <TableHead>Difficulty</TableHead>
                       <TableHead>Search Volume</TableHead>
                       <TableHead>Generated</TableHead>
@@ -191,6 +195,8 @@ export default function KeywordsManager() {
                             {keyword.status}
                           </Badge>
                         </TableCell>
+                        <TableCell className="capitalize">{keyword.intent || 'informational'}</TableCell>
+                        <TableCell>{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
                         <TableCell>{keyword.difficulty}</TableCell>
                         <TableCell>{keyword.searchVolume}</TableCell>
                         <TableCell className="text-muted-foreground">
