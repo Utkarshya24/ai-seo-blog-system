@@ -590,6 +590,7 @@ Jobs:
 - `generate-keywords`
 - `generate-blog`
 - `update-metrics`
+- `refresh-content` (AI refresh for declining published posts)
 
 ### GET `/cron`
 

@@ -1,7 +1,12 @@
 import cron from 'node-cron';
 import { prisma } from '@/lib/db';
 import { generateComparisonKeywords, generateKeywords } from '@/lib/ai/openai-service';
-import { generateBlogPost, generateMetaDescription } from '@/lib/ai/openai-service';
+import {
+  generateBlogPost,
+  generateMetaDescription,
+  generateSerpOptimization,
+  improveBlogContent,
+} from '@/lib/ai/openai-service';
 import { generateSlug, toSeoTitle } from '@/lib/utils/seo';
 import { syncSearchConsoleMetrics } from '@/lib/integrations/google-search-console';
 
@@ -12,6 +17,12 @@ const BLOG_GENERATION_BATCH_SIZE = Number(process.env.BLOG_GENERATION_BATCH_SIZE
 const AUTO_PUBLISH_GENERATED_POSTS = process.env.AUTO_PUBLISH_GENERATED_POSTS !== 'false';
 const BLOG_GENERATION_SCHEDULE = process.env.BLOG_GENERATION_SCHEDULE || '0 2 * * *';
 const METRICS_UPDATE_SCHEDULE = process.env.METRICS_UPDATE_SCHEDULE || '0 6 * * *';
+const CONTENT_REFRESH_SCHEDULE = process.env.CONTENT_REFRESH_SCHEDULE || '30 6 * * 1';
+const CONTENT_REFRESH_BATCH_SIZE = Number(process.env.CONTENT_REFRESH_BATCH_SIZE || 4);
+const CONTENT_REFRESH_MIN_IMPRESSIONS = Number(process.env.CONTENT_REFRESH_MIN_IMPRESSIONS || 200);
+const CONTENT_REFRESH_MAX_CTR = Number(process.env.CONTENT_REFRESH_MAX_CTR || 2.5);
+const CONTENT_REFRESH_MIN_POSITION = Number(process.env.CONTENT_REFRESH_MIN_POSITION || 14);
+const CONTENT_REFRESH_MIN_AGE_DAYS = Number(process.env.CONTENT_REFRESH_MIN_AGE_DAYS || 14);
 const GSC_SITE_URL = process.env.GSC_SITE_URL;
 const GSC_TOKEN = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN;
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID || null;
@@ -263,6 +274,92 @@ export const weeklyMetricsUpdateJob = {
   },
 };
 
+/**
+ * Weekly declining-content refresh job
+ */
+export const weeklyContentRefreshJob = {
+  schedule: CONTENT_REFRESH_SCHEDULE,
+  name: 'Content Refresh',
+  task: async () => {
+    console.log('[CRON] Starting content refresh job');
+
+    try {
+      const minPostAgeDate = new Date();
+      minPostAgeDate.setDate(minPostAgeDate.getDate() - CONTENT_REFRESH_MIN_AGE_DAYS);
+
+      const candidates = await prisma.seoMetrics.findMany({
+        where: {
+          impressions: { gte: CONTENT_REFRESH_MIN_IMPRESSIONS },
+          OR: [
+            { ctr: { lte: CONTENT_REFRESH_MAX_CTR } },
+            { position: { gte: CONTENT_REFRESH_MIN_POSITION } },
+          ],
+          post: {
+            status: 'published',
+            updatedAt: { lte: minPostAgeDate },
+            ...(DEFAULT_TENANT_ID && { tenantId: DEFAULT_TENANT_ID }),
+            ...(DEFAULT_WEBSITE_ID && { websiteId: DEFAULT_WEBSITE_ID }),
+          },
+        },
+        include: {
+          post: {
+            include: {
+              keyword: true,
+            },
+          },
+        },
+        orderBy: [{ impressions: 'desc' }, { updatedAt: 'asc' }],
+        take: CONTENT_REFRESH_BATCH_SIZE,
+      });
+
+      if (candidates.length === 0) {
+        console.log('[CRON] No declining posts found for content refresh');
+        return;
+      }
+
+      let refreshed = 0;
+      for (const row of candidates) {
+        const post = row.post;
+        if (!post) continue;
+
+        try {
+          const optimized = await generateSerpOptimization({
+            keyword: post.keyword?.keyword || post.title,
+            currentTitle: post.title,
+            currentMetaDescription: post.metaDescription,
+            impressions: row.impressions || row.traffic || 0,
+            clicks: row.clicks || 0,
+            ctr: row.ctr || 0,
+            position: row.position || row.ranking || 0,
+          });
+          const improvedContent = await improveBlogContent(post.content);
+
+          await prisma.post.update({
+            where: { id: post.id },
+            data: {
+              title: toSeoTitle(optimized.title),
+              metaDescription: optimized.metaDescription,
+              content: improvedContent || post.content,
+              updatedAt: new Date(),
+            },
+          });
+
+          refreshed += 1;
+          console.log(
+            `[CRON] Refreshed post ${post.slug} (impr=${row.impressions}, ctr=${row.ctr}, pos=${row.position})`
+          );
+        } catch (error) {
+          console.error(`[CRON] Failed to refresh post ${post.slug}:`, error);
+        }
+      }
+
+      console.log(`[CRON] Content refresh job completed. Refreshed ${refreshed} posts.`);
+    } catch (error) {
+      console.error('[CRON] Error in content refresh job:', error);
+    }
+  },
+};
+
 // Store registered jobs
 const registeredJobs: cron.ScheduledTask[] = [];
 
@@ -270,10 +367,11 @@ const registeredJobs: cron.ScheduledTask[] = [];
  * Initialize all cron jobs
  */
 export function initializeCronJobs() {
-  const jobs = [
+  const jobs: CronJobConfig[] = [
     dailyKeywordGenerationJob,
     weeklyBlogGenerationJob,
     weeklyMetricsUpdateJob,
+    weeklyContentRefreshJob,
   ];
 
   jobs.forEach((jobConfig) => {

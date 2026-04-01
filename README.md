@@ -185,6 +185,12 @@ npm run test:e2e-smoke
 
 Smoke test validates: auth, tenant+website context, keyword generation, post generation, publish, external publish, public feed/detail, metrics flow, and GSC endpoint contract.
 
+Cron jobs currently supported:
+- `generate-keywords`
+- `generate-blog`
+- `update-metrics`
+- `refresh-content` (automated refresh for declining published posts)
+
 ## 12) Troubleshooting
 
 1. `401 Unauthorized` on admin APIs:

@@ -110,4 +110,4 @@ Choose hybrid if needed:
 2. `CRON_SECRET` configured.
 3. `CONTENT_API_KEY` enabled for public APIs.
 4. `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN` + `GSC_SITE_URL` configured.
-5. Cron jobs scheduled for keywords/blog/metrics.
+5. Cron jobs scheduled for keywords/blog/metrics/content-refresh.
