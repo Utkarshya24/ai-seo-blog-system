@@ -34,9 +34,11 @@ export default function PostsManager() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [pushingExternalId, setPushingExternalId] = useState<string | null>(null);
+  const [linkingPostId, setLinkingPostId] = useState<string | null>(null);
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -166,6 +168,36 @@ export default function PostsManager() {
     }
   }
 
+  async function autoInsertLinks(postId: string) {
+    setError('');
+    setMessage('');
+    setLinkingPostId(postId);
+    try {
+      const res = await tenantFetch('/api/posts/auto-internal-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, maxLinks: 3 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to auto insert links.');
+        return;
+      }
+
+      if (data.updated) {
+        setMessage(`Inserted ${data.insertedLinks?.length || 0} internal links into selected post.`);
+      } else {
+        setMessage('No suitable internal link opportunity found for this post.');
+      }
+      await fetchData();
+    } catch (linkError) {
+      console.error('[Posts] autoInsertLinks error:', linkError);
+      setError('Auto internal linking failed.');
+    } finally {
+      setLinkingPostId(null);
+    }
+  }
+
   const statusColors: Record<string, string> = {
     draft: 'bg-sky-100 text-sky-800',
     published: 'bg-emerald-100 text-emerald-800',
@@ -239,6 +271,11 @@ export default function PostsManager() {
                 {error}
               </p>
             ) : null}
+            {message ? (
+              <p className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+                {message}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -303,6 +340,14 @@ export default function PostsManager() {
                               ) : (
                                 'Push External'
                               )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => autoInsertLinks(post.id)}
+                              disabled={linkingPostId === post.id}
+                            >
+                              {linkingPostId === post.id ? 'Linking...' : 'Auto Internal Links'}
                             </Button>
                           </div>
                         </TableCell>

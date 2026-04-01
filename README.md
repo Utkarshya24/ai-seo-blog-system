@@ -21,6 +21,7 @@ It handles:
 8. Per-website Google Search Console OAuth connection.
 9. SEO metrics ingestion (`manual`, `simulated`, `gsc`).
 10. Cron automation for recurring pipelines.
+11. Internal link opportunity detection + auto-link insertion assistant.
 
 ## 2) Tech Stack
 

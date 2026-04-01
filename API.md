@@ -300,6 +300,40 @@ Request:
 }
 ```
 
+### POST `/posts/auto-internal-link`
+
+Automatically inserts contextual internal links into a post content body.
+
+Request:
+
+```json
+{
+  "postId": "cpo...",
+  "maxLinks": 3
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "updated": true,
+  "insertedLinks": [
+    {
+      "postId": "cpo2...",
+      "slug": "related-post",
+      "anchorText": "related topic"
+    }
+  ],
+  "post": {
+    "id": "cpo...",
+    "title": "Current Post",
+    "slug": "current-post"
+  }
+}
+```
+
 Response:
 
 ```json
@@ -486,6 +520,13 @@ Request (compatibility style):
 ### GET `/seo/opportunities`
 
 Returns ranked list of low-CTR, high-impression posts with estimated click upside.
+
+### GET `/posts/internal-link-opportunities`
+
+Returns related-post suggestions for internal linking.
+
+Query params:
+- `postId` (required)
 
 Request (native style):
 
