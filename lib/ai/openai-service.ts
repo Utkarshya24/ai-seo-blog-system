@@ -125,6 +125,13 @@ export interface SerpOptimizationInput {
   position?: number;
 }
 
+export interface SocialPostInput {
+  title: string;
+  keyword: string;
+  metaDescription: string;
+  url: string;
+}
+
 /**
  * Generate SEO keywords for a given niche
  */
@@ -285,5 +292,58 @@ Rules:
     title,
     metaDescription,
     reasoning: (parsed.reasoning || 'Updated for stronger SERP clarity and relevance.').trim(),
+  };
+}
+
+export async function generateSocialPosts(
+  input: SocialPostInput
+): Promise<{
+  linkedin: { content: string; hashtags: string; callToAction: string };
+  x: { content: string; hashtags: string; callToAction: string };
+}> {
+  const { title, keyword, metaDescription, url } = input;
+  const prompt = `
+You are a social media SEO strategist.
+Create two platform-specific promotional posts for a blog article.
+
+Blog details:
+- Title: ${title}
+- Primary keyword: ${keyword}
+- Summary: ${metaDescription}
+- URL: ${url}
+
+Rules:
+1) Return strict JSON with keys: linkedin, x.
+2) Each platform object must contain keys: content, hashtags, callToAction.
+3) LinkedIn content: 500-900 characters, value-first professional tone, include keyword naturally.
+4) X content: max 260 characters, concise hook, include keyword naturally.
+5) hashtags: 3-6 relevant hashtags as plain text separated by spaces.
+6) callToAction: one short CTA line.
+7) Do not use markdown formatting.
+`;
+
+  const raw = await generateText(prompt);
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('Failed to parse social post generation response.');
+  }
+  const parsed = JSON.parse(jsonMatch[0]) as {
+    linkedin?: { content?: string; hashtags?: string; callToAction?: string };
+    x?: { content?: string; hashtags?: string; callToAction?: string };
+  };
+
+  const linkedin = parsed.linkedin || {};
+  const x = parsed.x || {};
+  return {
+    linkedin: {
+      content: (linkedin.content || `${title}\n\n${metaDescription}\n\n${url}`).trim(),
+      hashtags: (linkedin.hashtags || '#seo #contentmarketing #ai').trim(),
+      callToAction: (linkedin.callToAction || 'Read and share your thoughts.').trim(),
+    },
+    x: {
+      content: (x.content || `${title} ${url}`).trim().slice(0, 260),
+      hashtags: (x.hashtags || '#seo #ai').trim(),
+      callToAction: (x.callToAction || 'Read now.').trim(),
+    },
   };
 }

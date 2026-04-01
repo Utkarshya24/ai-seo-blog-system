@@ -25,6 +25,7 @@ It handles:
 12. SERP A/B testing (title/meta variants) with winner selection and apply flow.
 13. AI visibility tracker for ChatGPT/Perplexity citations (mentions + share).
 14. Backlink outreach CRM workflow with status pipeline and follow-up tracking.
+15. LinkedIn + Twitter(X) SEO social post generator from published blogs.
 
 ## 2) Tech Stack
 
@@ -155,6 +156,7 @@ Main endpoints:
 - `GET /api/ai-visibility/summary`
 - `GET/POST /api/outreach/opportunities`
 - `PATCH /api/outreach/opportunities/[id]`
+- `GET/POST /api/social/generate`
 - `GET/POST /api/cron`
 
 Full API docs:

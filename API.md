@@ -648,6 +648,51 @@ Request example:
 }
 ```
 
+## Social SEO Draft Generator
+
+### POST `/social/generate`
+
+Generate LinkedIn and Twitter(X) drafts for a published blog post.
+
+Request:
+
+```json
+{
+  "postId": "cpo..."
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "drafts": {
+    "linkedin": {
+      "id": "csd...",
+      "platform": "LINKEDIN",
+      "content": "Long-form LinkedIn post...",
+      "hashtags": "#seo #contentmarketing #ai",
+      "callToAction": "Read and share your thoughts."
+    },
+    "x": {
+      "id": "csd...",
+      "platform": "X",
+      "content": "Short X post...",
+      "hashtags": "#seo #ai",
+      "callToAction": "Read now."
+    }
+  }
+}
+```
+
+### GET `/social/generate`
+
+Fetch recent generated social drafts for a post.
+
+Query params:
+- `postId` (required)
+
 ### GET `/ai-visibility/summary`
 
 Returns citation share summary in selected window.

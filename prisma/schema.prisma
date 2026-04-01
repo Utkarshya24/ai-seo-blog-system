@@ -44,6 +44,11 @@ enum OutreachStatus {
   REJECTED
 }
 
+enum SocialPlatform {
+  LINKEDIN
+  X
+}
+
 model Tenant {
   id        String   @id @default(cuid())
   name      String
@@ -127,6 +132,7 @@ model Post {
   
   seoMetrics SeoMetrics?
   serpExperiments SerpExperiment[]
+  socialDrafts SocialPostDraft[]
 
   @@index([tenantId])
   @@index([websiteId])
@@ -204,6 +210,23 @@ model OutreachOpportunity {
   @@index([tenantId, websiteId, status])
   @@index([targetDomain])
   @@index([nextFollowUpAt])
+}
+
+model SocialPostDraft {
+  id          String         @id @default(cuid())
+  tenantId    String?
+  websiteId   String?
+  postId      String
+  post        Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  platform    SocialPlatform
+  content     String         @db.Text
+  hashtags    String?
+  callToAction String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([tenantId, websiteId, postId, platform])
+  @@index([postId, createdAt])
 }
 
 model SeoMetrics {
