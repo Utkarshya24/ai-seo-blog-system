@@ -22,6 +22,7 @@ It handles:
 9. SEO metrics ingestion (`manual`, `simulated`, `gsc`).
 10. Cron automation for recurring pipelines.
 11. Internal link opportunity detection + auto-link insertion assistant.
+12. SERP A/B testing (title/meta variants) with winner selection and apply flow.
 
 ## 2) Tech Stack
 

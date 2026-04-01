@@ -16,6 +16,17 @@ enum AdminRole {
   VIEWER
 }
 
+enum ExperimentStatus {
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum ExperimentVariant {
+  A
+  B
+}
+
 model Tenant {
   id        String   @id @default(cuid())
   name      String
@@ -96,12 +107,38 @@ model Post {
   updatedAt DateTime @updatedAt
   
   seoMetrics SeoMetrics?
+  serpExperiments SerpExperiment[]
 
   @@index([tenantId])
   @@index([websiteId])
   @@index([keywordId])
   @@index([slug])
   @@index([status])
+}
+
+model SerpExperiment {
+  id                       String            @id @default(cuid())
+  tenantId                 String?
+  websiteId                String?
+  postId                   String
+  post                     Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  status                   ExperimentStatus  @default(RUNNING)
+  variantATitle            String
+  variantAMetaDescription  String
+  variantBTitle            String
+  variantBMetaDescription  String
+  impressionsA             Int               @default(0)
+  clicksA                  Int               @default(0)
+  impressionsB             Int               @default(0)
+  clicksB                  Int               @default(0)
+  winner                   ExperimentVariant?
+  startedAt                DateTime          @default(now())
+  completedAt              DateTime?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  @@index([postId, status])
+  @@index([tenantId, websiteId, status])
 }
 
 model SeoMetrics {

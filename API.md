@@ -528,6 +528,50 @@ Returns related-post suggestions for internal linking.
 Query params:
 - `postId` (required)
 
+## SERP A/B Experiments
+
+### GET `/experiments/serp`
+
+List SERP experiments (optionally filter by `postId` or `status`).
+
+### POST `/experiments/serp`
+
+Start new SERP experiment for a post.
+
+Request:
+
+```json
+{
+  "postId": "cpo..."
+}
+```
+
+### PATCH `/experiments/serp/[id]`
+
+Two actions are supported:
+
+1. Record variant data
+
+```json
+{
+  "action": "record",
+  "impressionsA": 500,
+  "clicksA": 15,
+  "impressionsB": 520,
+  "clicksB": 24
+}
+```
+
+2. Select winner and apply it to post metadata
+
+```json
+{
+  "action": "select-winner",
+  "minImpressionsEach": 50,
+  "applyWinner": true
+}
+```
+
 Request (native style):
 
 ```json
