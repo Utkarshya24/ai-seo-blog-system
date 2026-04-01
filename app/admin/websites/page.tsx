@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +37,7 @@ interface AuthInfo {
   isGlobal: boolean;
 }
 
-export default function WebsitesPage() {
+function WebsitesPageInner() {
   const [auth, setAuth] = useState<AuthInfo | null>(null);
   const [tenants, setTenants] = useState<TenantRow[]>([]);
   const [websites, setWebsites] = useState<WebsiteRow[]>([]);
@@ -540,5 +540,13 @@ export default function WebsitesPage() {
         </Card>
       </div>
     </AdminShell>
+  );
+}
+
+export default function WebsitesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading websites...</div>}>
+      <WebsitesPageInner />
+    </Suspense>
   );
 }
