@@ -1,13 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CalendarClock, Gauge, Handshake, MailCheck, Search } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
+import { outreachStatusTones } from '@/lib/ui/status-maps';
 
 type OutreachStatus = 'PROSPECT' | 'CONTACTED' | 'FOLLOW_UP' | 'NEGOTIATING' | 'LIVE' | 'REJECTED';
 
@@ -38,6 +42,12 @@ const STATUS_OPTIONS: OutreachStatus[] = [
   'LIVE',
   'REJECTED',
 ];
+
+function scoreClass(score: number) {
+  if (score >= 80) return 'text-emerald-600';
+  if (score >= 60) return 'text-amber-600';
+  return 'text-rose-600';
+}
 
 export default function OutreachPage() {
   const [rows, setRows] = useState<Opportunity[]>([]);
@@ -178,12 +188,82 @@ export default function OutreachPage() {
     []
   );
 
+  const avgRelevance =
+    rows.length > 0 ? Math.round(rows.reduce((sum, row) => sum + row.relevanceScore, 0) / rows.length) : 0;
+  const avgAuthority =
+    rows.length > 0 ? Math.round(rows.reduce((sum, row) => sum + row.authorityScore, 0) / rows.length) : 0;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dueTodayCount = rows.filter((row) => row.nextFollowUpAt?.slice(0, 10) === todayIso).length;
+  const overdueCount = rows.filter(
+    (row) => row.nextFollowUpAt && row.nextFollowUpAt.slice(0, 10) < todayIso && row.status !== 'LIVE'
+  ).length;
+  const activePipelineCount = rows.filter((row) => row.status !== 'LIVE' && row.status !== 'REJECTED').length;
+  const overdueRate = activePipelineCount > 0 ? Math.round((overdueCount / activePipelineCount) * 100) : 0;
+
   return (
     <AdminShell
       title="Backlink Outreach"
       description="CRM-style pipeline for backlink prospecting, follow-ups, and live link tracking."
     >
-      <div className="grid gap-6">
+      <div className="grid min-w-0 gap-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Total Opportunities"
+            value={loading ? '-' : rows.length}
+            helper="Current outreach workload"
+            icon={Handshake}
+            trend={loading ? undefined : { value: `${summary.LIVE || 0} live links`, direction: 'up' }}
+          />
+          <KpiCard
+            label="Follow-ups Due Today"
+            value={loading ? '-' : dueTodayCount}
+            helper="Immediate outreach actions"
+            icon={CalendarClock}
+            variant="compact"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: dueTodayCount > 0 ? 'Action required today' : 'No immediate actions',
+                    direction: dueTodayCount > 0 ? 'down' : 'up',
+                  }
+            }
+          />
+          <KpiCard
+            label="Overdue Follow-ups"
+            value={loading ? '-' : overdueCount}
+            helper="Needs escalation this week"
+            icon={MailCheck}
+            variant="progress"
+            progress={loading ? undefined : overdueRate}
+            progressTone="warning"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: overdueRate > 20 ? 'Backlog building up' : 'Within control',
+                    direction: overdueRate > 20 ? 'down' : 'up',
+                  }
+            }
+          />
+          <KpiCard
+            label="Avg Relevance / Authority"
+            value={loading ? '-' : `${avgRelevance}/${avgAuthority}`}
+            helper="Prospect quality score"
+            icon={Gauge}
+            variant="compact"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: avgRelevance >= 70 ? 'Strong pipeline quality' : 'Quality can improve',
+                    direction: avgRelevance >= 70 ? 'up' : 'neutral',
+                  }
+            }
+          />
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>Pipeline Snapshot</CardTitle>
@@ -275,11 +355,15 @@ export default function OutreachPage() {
           </CardHeader>
           <CardContent>
             <div className="mb-4 grid gap-3 md:grid-cols-3">
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search domain/contact/notes"
-              />
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search domain/contact/notes"
+                  className="pl-9"
+                />
+              </div>
               <select
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 value={statusFilter}
@@ -292,7 +376,7 @@ export default function OutreachPage() {
                   </option>
                 ))}
               </select>
-              <Button variant="outline" onClick={() => loadData()}>
+              <Button variant="outline" onClick={() => void loadData()}>
                 Refresh List
               </Button>
             </div>
@@ -304,51 +388,57 @@ export default function OutreachPage() {
             ) : rows.length === 0 ? (
               <p className="py-8 text-center text-muted-foreground">No outreach opportunities found.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+                <Table className="min-w-[920px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Domain</TableHead>
                       <TableHead>Contact</TableHead>
-                      <TableHead>Scores</TableHead>
+                      <TableHead className="hidden md:table-cell">Scores</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Follow-Up</TableHead>
-                      <TableHead>Updated</TableHead>
+                      <TableHead className="hidden md:table-cell">Follow-Up</TableHead>
+                      <TableHead className="hidden lg:table-cell">Updated</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {rows.map((row) => (
                       <TableRow key={row.id}>
-                        <TableCell>
-                          <p className="font-medium">{row.targetDomain}</p>
-                          <p className="text-xs text-muted-foreground">{row.targetUrl || '-'}</p>
+                        <TableCell className="max-w-[220px] whitespace-normal break-words">
+                          <p className="font-medium break-all">{row.targetDomain}</p>
+                          <p className="text-xs text-muted-foreground break-all">{row.targetUrl || '-'}</p>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="max-w-[220px] whitespace-normal break-words">
                           <p>{row.contactName || '-'}</p>
-                          <p className="text-xs text-muted-foreground">{row.contactEmail || row.contactSocial || '-'}</p>
+                          <p className="text-xs text-muted-foreground break-all">{row.contactEmail || row.contactSocial || '-'}</p>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <p className={`text-xs font-medium ${scoreClass(row.relevanceScore)}`}>Rel: {row.relevanceScore}</p>
+                          <p className={`text-xs font-medium ${scoreClass(row.authorityScore)}`}>Auth: {row.authorityScore}</p>
                         </TableCell>
                         <TableCell>
-                          <p className="text-xs">Rel: {row.relevanceScore}</p>
-                          <p className="text-xs">Auth: {row.authorityScore}</p>
+                          <div className="space-y-2">
+                            <StatusBadge
+                              label={row.status}
+                              tonesByLabel={outreachStatusTones}
+                            />
+                            <select
+                              className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+                              value={row.status}
+                              onChange={(e) => void updateStatus(row, e.target.value as OutreachStatus)}
+                              disabled={savingId === row.id}
+                            >
+                              {STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                  {status}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </TableCell>
-                        <TableCell>
-                          <select
-                            className="h-9 rounded-md border border-input bg-background px-2 text-xs"
-                            value={row.status}
-                            onChange={(e) => updateStatus(row, e.target.value as OutreachStatus)}
-                            disabled={savingId === row.id}
-                          >
-                            {STATUS_OPTIONS.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                           {row.nextFollowUpAt ? new Date(row.nextFollowUpAt).toLocaleDateString() : '-'}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                           {new Date(row.updatedAt).toLocaleDateString()}
                         </TableCell>
                       </TableRow>

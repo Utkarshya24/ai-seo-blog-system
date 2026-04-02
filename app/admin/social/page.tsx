@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { Image, MessageSquareText, Newspaper, Share2 } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
+import { KpiCard } from '@/components/admin-kpi-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -150,6 +152,10 @@ export default function SocialPage() {
 
   const latestLinkedin = drafts.find((d) => d.platform === 'LINKEDIN');
   const latestX = drafts.find((d) => d.platform === 'X');
+  const selectedPost = posts.find((post) => post.id === selectedPostId);
+  const channelCoverage = (latestLinkedin ? 1 : 0) + (latestX ? 1 : 0);
+  const channelCoveragePercent = Math.round((channelCoverage / 2) * 100);
+  const imageGeneratedCount = (bannerImageUrl ? 1 : 0) + (socialImageUrl ? 1 : 0);
 
   async function copyText(text: string) {
     try {
@@ -166,6 +172,64 @@ export default function SocialPage() {
       description="Generate LinkedIn and Twitter(X) promotional posts from your published SEO blogs."
     >
       <div className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Published Posts"
+            value={loading ? '-' : posts.length}
+            helper="Eligible for social generation"
+            icon={Newspaper}
+            trend={loading ? undefined : { value: `${selectedPost ? '1' : '0'} post selected`, direction: 'neutral' }}
+          />
+          <KpiCard
+            label="Total Drafts"
+            value={drafts.length}
+            helper="For selected post"
+            icon={MessageSquareText}
+            variant="compact"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: drafts.length > 0 ? 'Draft set available' : 'No drafts yet',
+                    direction: drafts.length > 0 ? 'up' : 'neutral',
+                  }
+            }
+          />
+          <KpiCard
+            label="LinkedIn / X"
+            value={`${latestLinkedin ? 1 : 0}/${latestX ? 1 : 0}`}
+            helper="Latest channel coverage"
+            icon={Share2}
+            variant="progress"
+            progress={loading ? undefined : channelCoveragePercent}
+            progressTone="success"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: channelCoveragePercent === 100 ? 'Both channels ready' : 'Missing one channel',
+                    direction: channelCoveragePercent === 100 ? 'up' : 'down',
+                  }
+            }
+          />
+          <KpiCard
+            label="Current Post"
+            value={selectedPost?.title || 'No post selected'}
+            valueClassName="line-clamp-1 text-base"
+            helper="Active generation context"
+            icon={Image}
+            variant="compact"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: `${imageGeneratedCount}/2 images generated`,
+                    direction: imageGeneratedCount > 0 ? 'up' : 'neutral',
+                  }
+            }
+          />
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>Generate Social Drafts</CardTitle>

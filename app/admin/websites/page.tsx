@@ -2,8 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { CheckCircle2, Globe2, Layers3, Link2 } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
-import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -292,12 +294,60 @@ function WebsitesPageInner() {
     }
   }
 
+  const activeWebsites = websites.filter((website) => website.isActive).length;
+  const gscConnectedSites = websites.filter((website) => website.gscConnected).length;
+  const activeSiteRate = websites.length > 0 ? Math.round((activeWebsites / websites.length) * 100) : 0;
+  const gscCoverageRate = websites.length > 0 ? Math.round((gscConnectedSites / websites.length) * 100) : 0;
+
   return (
     <AdminShell
       title="Website Linking"
       description="Create tenants, connect multiple websites, and manage active website states."
     >
       <div className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Tenants"
+            value={loading ? '-' : tenants.length}
+            helper="Accessible organizations"
+            icon={Layers3}
+          />
+          <KpiCard
+            label="Linked Websites"
+            value={loading ? '-' : websites.length}
+            helper="In selected tenant scope"
+            icon={Globe2}
+            trend={loading ? undefined : { value: `${activeWebsites} active`, direction: 'up' }}
+          />
+          <KpiCard
+            label="Active Sites"
+            value={loading ? '-' : activeWebsites}
+            helper="Operational websites"
+            icon={CheckCircle2}
+            variant="progress"
+            progress={loading ? undefined : activeSiteRate}
+            progressTone="success"
+            trend={loading ? undefined : { value: `${activeSiteRate}% active rate`, direction: 'up' }}
+          />
+          <KpiCard
+            label="GSC Connected"
+            value={loading ? '-' : gscConnectedSites}
+            helper="Search Console ready"
+            icon={Link2}
+            variant="progress"
+            progress={loading ? undefined : gscCoverageRate}
+            progressTone="primary"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: `${gscCoverageRate}% coverage`,
+                    direction: gscCoverageRate >= 70 ? 'up' : 'neutral',
+                  }
+            }
+          />
+        </div>
+
         {canCreateTenant ? (
           <Card>
             <CardHeader>
@@ -475,9 +525,7 @@ function WebsitesPageInner() {
                         <TableCell className="max-w-[220px] truncate">{website.baseUrl}</TableCell>
                         <TableCell>{website.niche}</TableCell>
                         <TableCell>
-                          <Badge className={website.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}>
-                            {website.isActive ? 'ACTIVE' : 'INACTIVE'}
-                          </Badge>
+                          <StatusBadge label={website.isActive ? 'ACTIVE' : 'INACTIVE'} tone={website.isActive ? 'success' : 'neutral'} />
                         </TableCell>
                         <TableCell className="min-w-[260px]">
                           <div className="space-y-2">
@@ -492,15 +540,10 @@ function WebsitesPageInner() {
                               }}
                             />
                             <div className="flex flex-wrap gap-2">
-                              <Badge
-                                className={
-                                  website.gscConnected
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : 'bg-amber-100 text-amber-900'
-                                }
-                              >
-                                {website.gscConnected ? 'CONNECTED' : 'NOT CONNECTED'}
-                              </Badge>
+                              <StatusBadge
+                                label={website.gscConnected ? 'CONNECTED' : 'NOT CONNECTED'}
+                                tone={website.gscConnected ? 'success' : 'warning'}
+                              />
                               {website.gscConnectedAt ? (
                                 <span className="text-xs text-muted-foreground">
                                   {new Date(website.gscConnectedAt).toLocaleDateString()}

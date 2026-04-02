@@ -1,13 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Activity, Clock3, MousePointerClick, TrendingUp } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Clock3,
+  FlaskConical,
+  MousePointerClick,
+  Target,
+  TrendingUp,
+} from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
+import {
+  opportunitySeverityTones,
+  serpExperimentStatusTones,
+} from '@/lib/ui/status-maps';
 
 interface Metrics {
   postId: string;
@@ -75,7 +91,7 @@ export default function MetricsDashboard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
 
   async function fetchData() {
@@ -243,62 +259,139 @@ export default function MetricsDashboard() {
   const totalViews = metrics.reduce((sum, metric) => sum + metric.views, 0);
   const totalClicks = metrics.reduce((sum, metric) => sum + metric.clicks, 0);
   const avgBounceRate =
-    metrics.length > 0 ? (metrics.reduce((sum, metric) => sum + metric.bounceRate, 0) / metrics.length).toFixed(1) : '0';
+    metrics.length > 0
+      ? (metrics.reduce((sum, metric) => sum + metric.bounceRate, 0) / metrics.length).toFixed(1)
+      : '0';
   const avgTimeOnPage =
-    metrics.length > 0 ? (metrics.reduce((sum, metric) => sum + metric.avgTimeOnPage, 0) / metrics.length).toFixed(1) : '0';
+    metrics.length > 0
+      ? (metrics.reduce((sum, metric) => sum + metric.avgTimeOnPage, 0) / metrics.length).toFixed(1)
+      : '0';
+  const overallCtr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
+  const bounceRateNumber = Number(avgBounceRate);
+
+  const totalMissedClicks = opportunities.reduce((sum, item) => sum + item.missedClicks, 0);
+  const highSeverityCount = opportunities.filter((item) => item.severity === 'high').length;
+  const runningExperiments = experiments.filter((exp) => exp.status === 'RUNNING').length;
+  const completedExperiments = experiments.filter((exp) => exp.status === 'COMPLETED').length;
+
+  const topThreeOpportunities = useMemo(
+    () => [...opportunities].sort((a, b) => b.missedClicks - a.missedClicks).slice(0, 3),
+    [opportunities]
+  );
 
   return (
     <AdminShell
       title="SEO Performance"
       description="Observe post-level visibility, engagement, and retention trends."
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Views</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '-' : totalViews.toLocaleString()}</CardTitle>
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Total Views"
+          value={loading ? '-' : totalViews.toLocaleString()}
+          helper="Across all tracked posts"
+          icon={TrendingUp}
+          trend={loading ? undefined : { value: `${metrics.length} tracked posts`, direction: 'up' }}
+        />
+        <KpiCard
+          label="Total Clicks"
+          value={loading ? '-' : totalClicks.toLocaleString()}
+          helper="Search click interactions"
+          icon={MousePointerClick}
+          trend={loading ? undefined : { value: `${overallCtr}% overall CTR`, direction: 'up' }}
+        />
+        <KpiCard
+          label="Avg Time On Page"
+          value={loading ? '-' : `${avgTimeOnPage}s`}
+          helper="Audience attention span"
+          icon={Clock3}
+          variant="compact"
+          trend={loading ? undefined : { value: 'Session depth signal', direction: 'neutral' }}
+        />
+        <KpiCard
+          label="Avg Bounce Rate"
+          value={loading ? '-' : `${avgBounceRate}%`}
+          helper="Exit probability signal"
+          icon={Activity}
+          variant="progress"
+          progress={loading ? undefined : bounceRateNumber}
+          progressTone="warning"
+          trend={
+            loading
+              ? undefined
+              : {
+                  value: bounceRateNumber <= 45 ? 'Healthy range' : 'Needs reduction',
+                  direction: bounceRateNumber <= 45 ? 'up' : 'down',
+                }
+          }
+        />
+      </div>
+
+      <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-12">
+        <Card className="xl:col-span-7">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-primary" />
+              Opportunity Pulse
+            </CardTitle>
+            <CardDescription>Fast signal for where click gains are available.</CardDescription>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <TrendingUp className="mr-1 inline h-3.5 w-3.5" />
-            Across all tracked posts
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+              <p className="text-xs text-muted-foreground">Total Opportunities</p>
+              <p className="text-2xl font-semibold">{loading ? '-' : opportunities.length}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+              <p className="text-xs text-muted-foreground">High Severity</p>
+              <p className="text-2xl font-semibold text-rose-600">{loading ? '-' : highSeverityCount}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+              <p className="text-xs text-muted-foreground">Potential Click Recovery</p>
+              <p className="text-2xl font-semibold text-emerald-600">{loading ? '-' : `+${totalMissedClicks}`}</p>
+            </div>
+
+            {topThreeOpportunities.length > 0 ? (
+              <div className="sm:col-span-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Top Recovery Candidates</p>
+                {topThreeOpportunities.map((item) => (
+                  <div
+                    key={item.postId}
+                    className="flex items-center justify-between rounded-lg border border-border/70 bg-background/60 px-3 py-2"
+                  >
+                    <p className="line-clamp-1 text-sm font-medium">{item.title}</p>
+                    <StatusBadge label={item.severity} tonesByLabel={opportunitySeverityTones} />
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Clicks</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '-' : totalClicks.toLocaleString()}</CardTitle>
+        <Card className="xl:col-span-5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FlaskConical className="h-4 w-4 text-primary" />
+              Experiment Health
+            </CardTitle>
+            <CardDescription>Live status of SERP metadata experiments.</CardDescription>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <MousePointerClick className="mr-1 inline h-3.5 w-3.5" />
-            Search click interactions
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Avg Time On Page</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '-' : `${avgTimeOnPage}s`}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <Clock3 className="mr-1 inline h-3.5 w-3.5" />
-            Audience attention span
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Avg Bounce Rate</CardDescription>
-            <CardTitle className="text-3xl">{loading ? '-' : `${avgBounceRate}%`}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <Activity className="mr-1 inline h-3.5 w-3.5" />
-            Exit probability signal
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+              <p className="text-xs text-muted-foreground">Running</p>
+              <p className="text-2xl font-semibold text-sky-600">{loading ? '-' : runningExperiments}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+              <p className="text-xs text-muted-foreground">Completed</p>
+              <p className="text-2xl font-semibold text-emerald-600">{loading ? '-' : completedExperiments}</p>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/60 p-3 sm:col-span-2">
+              <p className="text-xs text-muted-foreground">Total Experiments</p>
+              <p className="text-2xl font-semibold">{loading ? '-' : experiments.length}</p>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader>
           <CardTitle>Post Performance Table</CardTitle>
           <CardDescription>Detailed metrics by published article.</CardDescription>
@@ -309,18 +402,18 @@ export default function MetricsDashboard() {
               <Spinner className="h-8 w-8" />
             </div>
           ) : metrics.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+              <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Post</TableHead>
                     <TableHead>Views</TableHead>
                     <TableHead>Clicks</TableHead>
                     <TableHead>CTR</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Avg Time</TableHead>
-                    <TableHead>Bounce Rate</TableHead>
-                    <TableHead>Updated</TableHead>
+                    <TableHead className="hidden md:table-cell">Source</TableHead>
+                    <TableHead className="hidden md:table-cell">Avg Time</TableHead>
+                    <TableHead className="hidden lg:table-cell">Bounce Rate</TableHead>
+                    <TableHead className="hidden lg:table-cell">Updated</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -335,7 +428,7 @@ export default function MetricsDashboard() {
 
                     return (
                       <TableRow key={metric.postId}>
-                        <TableCell className="max-w-xs font-medium">
+                        <TableCell className="max-w-[220px] font-medium whitespace-normal break-words">
                           {slug ? (
                             <Link href={`/blog/${slug}`} className="line-clamp-1 text-primary hover:underline">
                               {getPostTitle(metric.postId)}
@@ -347,10 +440,10 @@ export default function MetricsDashboard() {
                         <TableCell>{metric.views.toLocaleString()}</TableCell>
                         <TableCell>{metric.clicks.toLocaleString()}</TableCell>
                         <TableCell>{ctr}%</TableCell>
-                        <TableCell className="uppercase">{metric.source || 'manual'}</TableCell>
-                        <TableCell>{metric.avgTimeOnPage.toFixed(1)}s</TableCell>
-                        <TableCell>{metric.bounceRate.toFixed(1)}%</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden uppercase md:table-cell">{metric.source || 'manual'}</TableCell>
+                        <TableCell className="hidden md:table-cell">{metric.avgTimeOnPage.toFixed(1)}s</TableCell>
+                        <TableCell className="hidden lg:table-cell">{metric.bounceRate.toFixed(1)}%</TableCell>
+                        <TableCell className="hidden text-muted-foreground lg:table-cell">
                           {new Date(metric.updatedAt).toLocaleDateString()}
                         </TableCell>
                       </TableRow>
@@ -360,14 +453,12 @@ export default function MetricsDashboard() {
               </Table>
             </div>
           ) : (
-            <p className="py-8 text-center text-muted-foreground">
-              No metrics yet. Publish posts and run metrics updates.
-            </p>
+            <p className="py-8 text-center text-muted-foreground">No metrics yet. Publish posts and run metrics updates.</p>
           )}
         </CardContent>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader>
           <CardTitle>CTR Opportunities</CardTitle>
           <CardDescription>High-impression pages where title/meta updates can win more clicks.</CardDescription>
@@ -385,52 +476,54 @@ export default function MetricsDashboard() {
           ) : opportunities.length === 0 ? (
             <p className="py-6 text-sm text-muted-foreground">No immediate CTR opportunities detected.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+              <Table className="min-w-[940px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Post</TableHead>
-                    <TableHead>Keyword</TableHead>
+                    <TableHead className="hidden md:table-cell">Keyword</TableHead>
                     <TableHead>Impr.</TableHead>
                     <TableHead>CTR</TableHead>
-                    <TableHead>Pos.</TableHead>
+                    <TableHead className="hidden md:table-cell">Pos.</TableHead>
                     <TableHead>Potential Clicks</TableHead>
                     <TableHead>Severity</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {opportunities.slice(0, 20).map((opportunity) => (
                     <TableRow key={opportunity.postId}>
-                      <TableCell className="max-w-xs font-medium">
+                      <TableCell className="max-w-[220px] font-medium whitespace-normal break-words">
                         <Link href={`/blog/${opportunity.slug}`} className="line-clamp-1 text-primary hover:underline">
                           {opportunity.title}
                         </Link>
                       </TableCell>
-                      <TableCell className="max-w-[180px] truncate">{opportunity.keyword}</TableCell>
+                      <TableCell className="hidden max-w-[180px] truncate md:table-cell">{opportunity.keyword}</TableCell>
                       <TableCell>{opportunity.impressions.toLocaleString()}</TableCell>
                       <TableCell>{opportunity.ctr.toFixed(2)}%</TableCell>
-                      <TableCell>{opportunity.position.toFixed(1)}</TableCell>
-                      <TableCell>+{opportunity.missedClicks}</TableCell>
-                      <TableCell className="uppercase">{opportunity.severity}</TableCell>
+                      <TableCell className="hidden md:table-cell">{opportunity.position.toFixed(1)}</TableCell>
+                      <TableCell className="font-medium text-emerald-700">+{opportunity.missedClicks}</TableCell>
+                      <TableCell>
+                        <StatusBadge label={opportunity.severity} tonesByLabel={opportunitySeverityTones} />
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => optimizeSerp(opportunity.postId)}
                             disabled={optimizingPostId === opportunity.postId}
                           >
-                            {optimizingPostId === opportunity.postId ? 'Optimizing...' : 'Optimize SERP'}
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                            {optimizingPostId === opportunity.postId ? 'Optimizing...' : 'Optimize'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => startExperiment(opportunity.postId)}
                             disabled={startingExperimentPostId === opportunity.postId}
                           >
                             {startingExperimentPostId === opportunity.postId ? 'Starting...' : 'Start A/B'}
-                          </button>
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -442,7 +535,7 @@ export default function MetricsDashboard() {
         </CardContent>
       </Card>
 
-      <Card className="mt-6">
+      <Card className="mt-4">
         <CardHeader>
           <CardTitle>SERP A/B Experiments</CardTitle>
           <CardDescription>Track variant performance and apply winner to live metadata.</CardDescription>
@@ -455,8 +548,8 @@ export default function MetricsDashboard() {
           ) : experiments.length === 0 ? (
             <p className="py-6 text-sm text-muted-foreground">No SERP experiments yet. Start one from opportunities table.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+              <Table className="min-w-[980px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Post</TableHead>
@@ -464,7 +557,7 @@ export default function MetricsDashboard() {
                     <TableHead>Variant A (Impr/Clicks/CTR)</TableHead>
                     <TableHead>Variant B (Impr/Clicks/CTR)</TableHead>
                     <TableHead>Winner</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -480,18 +573,23 @@ export default function MetricsDashboard() {
                       <TableRow key={experiment.id}>
                         <TableCell className="max-w-xs font-medium">
                           {experiment.post?.slug ? (
-                            <Link href={`/blog/${experiment.post.slug}`} className="line-clamp-1 text-primary hover:underline">
+                            <Link
+                              href={`/blog/${experiment.post.slug}`}
+                              className="line-clamp-1 text-primary hover:underline"
+                            >
                               {experiment.post.title}
                             </Link>
                           ) : (
                             experiment.postId
                           )}
                         </TableCell>
-                        <TableCell>{experiment.status}</TableCell>
+                        <TableCell>
+                          <StatusBadge label={experiment.status} tonesByLabel={serpExperimentStatusTones} />
+                        </TableCell>
                         <TableCell className="min-w-[220px]">
                           <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            <Input
+                              className="h-8 text-xs"
                               value={draft.impressionsA}
                               onChange={(e) =>
                                 setExperimentDrafts((prev) => ({
@@ -502,8 +600,8 @@ export default function MetricsDashboard() {
                               placeholder="Impressions A"
                               disabled={experiment.status !== 'RUNNING'}
                             />
-                            <input
-                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            <Input
+                              className="h-8 text-xs"
                               value={draft.clicksA}
                               onChange={(e) =>
                                 setExperimentDrafts((prev) => ({
@@ -519,8 +617,8 @@ export default function MetricsDashboard() {
                         </TableCell>
                         <TableCell className="min-w-[220px]">
                           <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            <Input
+                              className="h-8 text-xs"
                               value={draft.impressionsB}
                               onChange={(e) =>
                                 setExperimentDrafts((prev) => ({
@@ -531,8 +629,8 @@ export default function MetricsDashboard() {
                               placeholder="Impressions B"
                               disabled={experiment.status !== 'RUNNING'}
                             />
-                            <input
-                              className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            <Input
+                              className="h-8 text-xs"
                               value={draft.clicksB}
                               onChange={(e) =>
                                 setExperimentDrafts((prev) => ({
@@ -546,25 +644,25 @@ export default function MetricsDashboard() {
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">CTR: {experiment.ctrB.toFixed(2)}%</p>
                         </TableCell>
-                        <TableCell>{experiment.winner || '-'}</TableCell>
+                        <TableCell className="font-medium">{experiment.winner || '-'}</TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => saveExperimentData(experiment.id)}
                               disabled={experiment.status !== 'RUNNING' || savingExperimentId === experiment.id}
                             >
-                              {savingExperimentId === experiment.id ? 'Saving...' : 'Save Data'}
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                              {savingExperimentId === experiment.id ? 'Saving...' : 'Save'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => selectWinner(experiment.id)}
                               disabled={experiment.status !== 'RUNNING' || selectingWinnerId === experiment.id}
                             >
-                              {selectingWinnerId === experiment.id ? 'Selecting...' : 'Select Winner'}
-                            </button>
+                              {selectingWinnerId === experiment.id ? 'Selecting...' : 'Pick Winner'}
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -574,6 +672,13 @@ export default function MetricsDashboard() {
               </Table>
             </div>
           )}
+
+          {highSeverityCount > 0 ? (
+            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <AlertTriangle className="mr-1 inline h-4 w-4" />
+              {highSeverityCount} high-severity opportunities are currently waiting for action.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </AdminShell>

@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { KeyRound, ShieldCheck, ShieldOff, UserCog } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
-import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -138,12 +140,59 @@ export default function TeamAccessPage() {
     }
   }
 
+  const activeTokens = tokens.filter((token) => token.isActive).length;
+  const revokedTokens = tokens.length - activeTokens;
+  const ownerCount = tokens.filter((token) => token.role === 'OWNER').length;
+  const editorCount = tokens.filter((token) => token.role === 'EDITOR').length;
+  const activeRate = tokens.length > 0 ? Math.round((activeTokens / tokens.length) * 100) : 0;
+
   return (
     <AdminShell
       title="Team Access"
       description="Create and manage role-based admin tokens for multi-user team workflows."
     >
       <div className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Total Tokens"
+            value={loading ? '-' : tokens.length}
+            helper="Issued credentials"
+            icon={KeyRound}
+          />
+          <KpiCard
+            label="Active"
+            value={loading ? '-' : activeTokens}
+            helper="Currently enabled"
+            icon={ShieldCheck}
+            variant="progress"
+            progress={loading ? undefined : activeRate}
+            progressTone="success"
+            trend={loading ? undefined : { value: `${activeRate}% active`, direction: 'up' }}
+          />
+          <KpiCard
+            label="Revoked"
+            value={loading ? '-' : revokedTokens}
+            helper="Blocked credentials"
+            icon={ShieldOff}
+            variant="compact"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: revokedTokens > 0 ? 'Review access list' : 'No revoked tokens',
+                    direction: revokedTokens > 0 ? 'neutral' : 'up',
+                  }
+            }
+          />
+          <KpiCard
+            label="OWNER / EDITOR"
+            value={loading ? '-' : `${ownerCount}/${editorCount}`}
+            helper="Permission mix"
+            icon={UserCog}
+            variant="compact"
+          />
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>Create Team Token</CardTitle>
@@ -249,9 +298,7 @@ export default function TeamAccessPage() {
                         <TableCell className="font-mono text-xs">{token.tenantId || 'GLOBAL'}</TableCell>
                         <TableCell className="font-mono">****{token.lastFour}</TableCell>
                         <TableCell>
-                          <Badge className={token.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}>
-                            {token.isActive ? 'ACTIVE' : 'REVOKED'}
-                          </Badge>
+                          <StatusBadge label={token.isActive ? 'ACTIVE' : 'REVOKED'} tone={token.isActive ? 'success' : 'neutral'} />
                         </TableCell>
                         <TableCell>{new Date(token.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell>

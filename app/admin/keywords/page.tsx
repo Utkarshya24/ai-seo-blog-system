@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { BarChart3, CircleDashed, Search, Target } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
-import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
+import { keywordStatusTones } from '@/lib/ui/status-maps';
 
 interface Keyword {
   id: string;
@@ -37,7 +40,7 @@ export default function KeywordsManager() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchKeywords();
+    void fetchKeywords();
   }, []);
 
   async function fetchKeywords() {
@@ -84,24 +87,82 @@ export default function KeywordsManager() {
     }
   }
 
-  const statusColors: Record<string, string> = {
-    pending: 'bg-amber-100 text-amber-800',
-    used: 'bg-emerald-100 text-emerald-800',
-    draft: 'bg-sky-100 text-sky-800',
-  };
+  const pendingCount = keywords.filter((keyword) => keyword.status === 'pending').length;
+  const avgDifficulty =
+    keywords.length > 0
+      ? Math.round(keywords.reduce((sum, keyword) => sum + keyword.difficulty, 0) / keywords.length)
+      : 0;
+  const avgPriority =
+    keywords.length > 0
+      ? (keywords.reduce((sum, keyword) => sum + (keyword.priorityScore ?? 0), 0) / keywords.length).toFixed(1)
+      : '0.0';
+  const totalVolume = useMemo(
+    () => keywords.reduce((sum, keyword) => sum + (keyword.searchVolume || 0), 0),
+    [keywords]
+  );
+  const pendingRate = keywords.length > 0 ? Math.round((pendingCount / keywords.length) * 100) : 0;
 
   return (
     <AdminShell
       title="Keyword Intelligence"
       description="Generate and maintain a prioritized SEO keyword backlog."
     >
-      <div className="grid gap-6">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Total Keywords"
+          value={loading ? '-' : keywords.length}
+          helper="Workspace backlog size"
+          icon={Search}
+          trend={loading ? undefined : { value: `${pendingCount} pending`, direction: 'neutral' }}
+        />
+        <KpiCard
+          label="Pending To Use"
+          value={loading ? '-' : pendingCount}
+          helper="Ready for post generation"
+          icon={CircleDashed}
+          variant="progress"
+          progress={loading ? undefined : pendingRate}
+          progressTone="warning"
+          trend={
+            loading
+              ? undefined
+              : {
+                  value: pendingRate > 50 ? 'Strong backlog' : 'Backlog getting low',
+                  direction: pendingRate > 50 ? 'up' : 'down',
+                }
+          }
+        />
+        <KpiCard
+          label="Avg Difficulty"
+          value={loading ? '-' : avgDifficulty}
+          helper="Competitive complexity score"
+          icon={Target}
+          variant="compact"
+          trend={
+            loading
+              ? undefined
+              : {
+                  value: avgDifficulty <= 45 ? 'Lower competition mix' : 'Higher competition mix',
+                  direction: avgDifficulty <= 45 ? 'up' : 'down',
+                }
+          }
+        />
+        <KpiCard
+          label="Total Search Volume"
+          value={loading ? '-' : totalVolume.toLocaleString()}
+          helper={`Avg priority ${avgPriority}`}
+          icon={BarChart3}
+          trend={loading ? undefined : { value: `Priority ${avgPriority}`, direction: 'up' }}
+        />
+      </div>
+
+      <div className="mt-4 grid min-w-0 gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Generate Keywords</CardTitle>
             <CardDescription>Provide a niche and let AI suggest keyword ideas.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             <form onSubmit={generateKeywords} className="grid gap-4 md:grid-cols-5">
               <div className="md:col-span-2">
                 <label className="mb-1.5 block text-sm font-medium">Niche</label>
@@ -162,17 +223,52 @@ export default function KeywordsManager() {
             <CardTitle>Keyword Backlog</CardTitle>
             <CardDescription>{keywords.length} records tracked</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Spinner className="h-8 w-8" />
               </div>
             ) : keywords.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
+              <>
+                <div className="space-y-3 md:hidden">
+                  {keywords.map((keyword) => (
+                    <div key={keyword.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <p className="text-sm font-semibold leading-5">{keyword.keyword}</p>
+                        <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <p className="text-muted-foreground">
+                          Niche: <span className="text-foreground">{keyword.niche}</span>
+                        </p>
+                        <p className="text-muted-foreground">
+                          Intent:{' '}
+                          <span className="capitalize text-foreground">
+                            {keyword.intent || 'informational'}
+                          </span>
+                        </p>
+                        <p className="text-muted-foreground">
+                          Priority: <span className="text-foreground">{(keyword.priorityScore ?? 0).toFixed(1)}</span>
+                        </p>
+                        <p className="text-muted-foreground">
+                          Difficulty: <span className="text-foreground">{keyword.difficulty}</span>
+                        </p>
+                        <p className="col-span-2 text-muted-foreground">
+                          Search Volume:{' '}
+                          <span className="text-foreground">
+                            {keyword.searchVolume} ({keyword.searchVolumeSource === 'gsc' ? 'GSC' : 'Estimated'})
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 pb-2 md:block">
+                  <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>ID</TableHead>
+                      <TableHead className="hidden lg:table-cell">ID</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Niche</TableHead>
                       <TableHead>Status</TableHead>
@@ -180,23 +276,23 @@ export default function KeywordsManager() {
                       <TableHead>Priority</TableHead>
                       <TableHead>Difficulty</TableHead>
                       <TableHead>Search Volume</TableHead>
-                      <TableHead>Generated</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Updated</TableHead>
+                      <TableHead className="hidden md:table-cell">Generated</TableHead>
+                      <TableHead className="hidden lg:table-cell">Created</TableHead>
+                      <TableHead className="hidden lg:table-cell">Updated</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {keywords.map((keyword) => (
                       <TableRow key={keyword.id}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="hidden max-w-[120px] truncate font-mono text-xs text-muted-foreground lg:table-cell">
                           {keyword.id}
                         </TableCell>
-                        <TableCell className="font-medium">{keyword.keyword}</TableCell>
-                        <TableCell>{keyword.niche}</TableCell>
+                        <TableCell className="max-w-[220px] whitespace-normal break-words font-medium">
+                          {keyword.keyword}
+                        </TableCell>
+                        <TableCell className="max-w-[140px] whitespace-normal break-words">{keyword.niche}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[keyword.status] || 'bg-secondary text-foreground'}>
-                            {keyword.status}
-                          </Badge>
+                          <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
                         </TableCell>
                         <TableCell className="capitalize">{keyword.intent || 'informational'}</TableCell>
                         <TableCell>{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
@@ -209,24 +305,23 @@ export default function KeywordsManager() {
                               : 'Estimated'}
                           </div>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden text-muted-foreground md:table-cell">
                           {new Date(keyword.generatedAt).toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden text-muted-foreground lg:table-cell">
                           {new Date(keyword.createdAt).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden text-muted-foreground lg:table-cell">
                           {new Date(keyword.updatedAt).toLocaleString()}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+                </div>
+              </>
             ) : (
-              <p className="py-8 text-center text-muted-foreground">
-                No keywords yet. Generate your first batch.
-              </p>
+              <p className="py-8 text-center text-muted-foreground">No keywords yet. Generate your first batch.</p>
             )}
           </CardContent>
         </Card>

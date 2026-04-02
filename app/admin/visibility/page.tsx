@@ -123,6 +123,25 @@ export default function VisibilityPage() {
       description="Track ChatGPT/Perplexity citations and monitor mention share for your website."
     >
       <div className="grid gap-6">
+        {summary ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider Breakdown</CardTitle>
+              <CardDescription>Mention distribution by assistant provider.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {Object.entries(summary.providerBreakdown || {}).map(([key, value]) => (
+                  <div key={key} className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">{key}</p>
+                    <p className="text-2xl font-semibold">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card>
           <CardHeader>
             <CardTitle>Visibility Summary (30 Days)</CardTitle>

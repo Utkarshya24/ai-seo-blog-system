@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { BookOpenCheck, Clock3, FileText, PenSquare } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
-import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/admin-kpi-card';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
+import { postStatusTones } from '@/lib/ui/status-maps';
 
 interface Post {
   id: string;
@@ -42,7 +45,7 @@ export default function PostsManager() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
 
   async function fetchData() {
@@ -198,22 +201,71 @@ export default function PostsManager() {
     }
   }
 
-  const statusColors: Record<string, string> = {
-    draft: 'bg-sky-100 text-sky-800',
-    published: 'bg-emerald-100 text-emerald-800',
-    scheduled: 'bg-sky-100 text-sky-800',
-  };
+  const draftCount = posts.filter((post) => post.status === 'draft').length;
+  const publishedCount = posts.filter((post) => post.status === 'published').length;
+  const publishedRate = posts.length > 0 ? Math.round((publishedCount / posts.length) * 100) : 0;
+  const draftRate = posts.length > 0 ? Math.round((draftCount / posts.length) * 100) : 0;
+  const avgReadingTime =
+    posts.length > 0
+      ? Math.round(posts.reduce((sum, post) => sum + (post.readingTime || 0), 0) / posts.length)
+      : 0;
 
   return (
     <AdminShell
       title="Post Studio"
       description="Generate draft articles from keywords, review, and publish quickly."
     >
-      <div className="grid gap-6">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Total Posts"
+          value={loading ? '-' : posts.length}
+          helper="Content inventory size"
+          icon={FileText}
+          trend={loading ? undefined : { value: `${publishedCount} published`, direction: 'up' }}
+        />
+        <KpiCard
+          label="Draft Queue"
+          value={loading ? '-' : draftCount}
+          helper="Needs review and publish"
+          icon={PenSquare}
+          variant="progress"
+          progress={loading ? undefined : draftRate}
+          progressTone="warning"
+          trend={
+            loading
+              ? undefined
+              : {
+                  value: draftRate > 40 ? 'Review queue high' : 'Queue in control',
+                  direction: draftRate > 40 ? 'down' : 'up',
+                }
+          }
+        />
+        <KpiCard
+          label="Published"
+          value={loading ? '-' : publishedCount}
+          helper="Live articles on blog"
+          icon={BookOpenCheck}
+          variant="progress"
+          progress={loading ? undefined : publishedRate}
+          progressTone="success"
+          trend={loading ? undefined : { value: `${publishedRate}% publish ratio`, direction: 'up' }}
+        />
+        <KpiCard
+          label="Avg Reading Time"
+          value={loading ? '-' : `${avgReadingTime}m`}
+          helper="Depth benchmark"
+          icon={Clock3}
+          variant="compact"
+        />
+      </div>
+
+      <div className="mt-4 grid min-w-0 gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Generate New Post</CardTitle>
-            <CardDescription>Select a pending keyword and create a draft. You can also push posts to an external webhook.</CardDescription>
+            <CardDescription>
+              Select a pending keyword and create a draft. You can also push posts to an external webhook.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={generateBlogPost} className="grid gap-4 md:grid-cols-3">
@@ -243,7 +295,11 @@ export default function PostsManager() {
                 />
               </div>
               <div className="flex items-end">
-                <Button type="submit" disabled={generating || !selectedKeywordId || !postTitle.trim()} className="w-full">
+                <Button
+                  type="submit"
+                  disabled={generating || !selectedKeywordId || !postTitle.trim()}
+                  className="w-full"
+                >
                   {generating ? (
                     <>
                       <Spinner className="mr-2 h-4 w-4" />
@@ -284,40 +340,38 @@ export default function PostsManager() {
             <CardTitle>Posts Library</CardTitle>
             <CardDescription>{posts.length} total posts</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Spinner className="h-8 w-8" />
               </div>
             ) : posts.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Reading Time</TableHead>
-                      <TableHead>Created</TableHead>
+                      <TableHead className="hidden md:table-cell">Reading Time</TableHead>
+                      <TableHead className="hidden lg:table-cell">Created</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {posts.map((post) => (
                       <TableRow key={post.id}>
-                        <TableCell className="max-w-xs font-medium">
-                          <Link href={`/blog/${post.slug}`} className="line-clamp-1 text-primary hover:underline">
+                        <TableCell className="max-w-[220px] font-medium whitespace-normal break-words">
+                          <Link href={`/blog/${post.slug}`} className="line-clamp-2 text-primary hover:underline">
                             {post.title}
                           </Link>
                         </TableCell>
-                        <TableCell>{post.keyword?.keyword}</TableCell>
+                        <TableCell className="max-w-[180px] whitespace-normal break-words">{post.keyword?.keyword}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[post.status] || 'bg-secondary text-foreground'}>
-                            {post.status}
-                          </Badge>
+                          <StatusBadge label={post.status} tonesByLabel={postStatusTones} />
                         </TableCell>
-                        <TableCell>{post.readingTime} min</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="hidden md:table-cell">{post.readingTime} min</TableCell>
+                        <TableCell className="hidden text-muted-foreground lg:table-cell">
                           {new Date(post.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
@@ -357,9 +411,7 @@ export default function PostsManager() {
                 </Table>
               </div>
             ) : (
-              <p className="py-8 text-center text-muted-foreground">
-                No posts yet. Start by generating a draft.
-              </p>
+              <p className="py-8 text-center text-muted-foreground">No posts yet. Start by generating a draft.</p>
             )}
           </CardContent>
         </Card>

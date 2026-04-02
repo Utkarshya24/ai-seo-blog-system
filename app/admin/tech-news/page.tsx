@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { CalendarClock, Flame, Hash, Newspaper } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
+import { KpiCard } from '@/components/admin-kpi-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -112,12 +114,57 @@ export default function TechNewsPage() {
     void loadData();
   }, []);
 
+  const highSignalStories = items.filter((item) => item.score >= 70).length;
+  const highSignalRate = items.length > 0 ? Math.round((highSignalStories / items.length) * 100) : 0;
+
   return (
     <AdminShell
       title="Tech News"
       description="Trending technology topics aggregated every 2 hours for keyword and content planning."
     >
       <div className="grid gap-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Total Stories"
+            value={loading ? '-' : items.length}
+            helper="Fetched trend articles"
+            icon={Newspaper}
+            trend={loading ? undefined : { value: `${keywords.length} keyword signals`, direction: 'up' }}
+          />
+          <KpiCard
+            label="Trending Keywords"
+            value={loading ? '-' : keywords.length}
+            helper="Detected from feeds"
+            icon={Hash}
+            variant="compact"
+          />
+          <KpiCard
+            label="High Signal Stories"
+            value={loading ? '-' : highSignalStories}
+            helper="Score 70 and above"
+            icon={Flame}
+            variant="progress"
+            progress={loading ? undefined : highSignalRate}
+            progressTone="warning"
+            trend={
+              loading
+                ? undefined
+                : {
+                    value: highSignalRate >= 40 ? 'Strong trend velocity' : 'Monitor emerging trends',
+                    direction: highSignalRate >= 40 ? 'up' : 'neutral',
+                  }
+            }
+          />
+          <KpiCard
+            label="Last Snapshot"
+            value={generatedAt ? new Date(generatedAt).toLocaleDateString() : 'Not available'}
+            valueClassName="text-base"
+            helper="Most recent refresh date"
+            icon={CalendarClock}
+            variant="compact"
+          />
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle>Trending Keywords</CardTitle>
