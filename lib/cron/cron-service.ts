@@ -9,6 +9,8 @@ import {
 } from '@/lib/ai/openai-service';
 import { generateSlug, toSeoTitle } from '@/lib/utils/seo';
 import { syncSearchConsoleMetrics } from '@/lib/integrations/google-search-console';
+import { estimateDifficulty, estimateIntent, estimateSearchVolume } from '@/lib/seo/keyword-metrics';
+import { getTrendingTechNews, refreshTrendingTechNews } from '@/lib/trends/tech-news';
 
 const CRON_SECRET = process.env.CRON_SECRET || 'default-secret';
 const KEYWORDS_PER_NICHE = Number(process.env.KEYWORDS_PER_NICHE || 4);
@@ -18,6 +20,7 @@ const AUTO_PUBLISH_GENERATED_POSTS = process.env.AUTO_PUBLISH_GENERATED_POSTS !=
 const BLOG_GENERATION_SCHEDULE = process.env.BLOG_GENERATION_SCHEDULE || '0 2 * * *';
 const METRICS_UPDATE_SCHEDULE = process.env.METRICS_UPDATE_SCHEDULE || '0 6 * * *';
 const CONTENT_REFRESH_SCHEDULE = process.env.CONTENT_REFRESH_SCHEDULE || '30 6 * * 1';
+const TECH_NEWS_SCHEDULE = process.env.TECH_NEWS_SCHEDULE || '0 */2 * * *';
 const CONTENT_REFRESH_BATCH_SIZE = Number(process.env.CONTENT_REFRESH_BATCH_SIZE || 4);
 const CONTENT_REFRESH_MIN_IMPRESSIONS = Number(process.env.CONTENT_REFRESH_MIN_IMPRESSIONS || 200);
 const CONTENT_REFRESH_MAX_CTR = Number(process.env.CONTENT_REFRESH_MAX_CTR || 2.5);
@@ -56,15 +59,28 @@ export const dailyKeywordGenerationJob = {
     console.log('[CRON] Starting daily keyword generation job');
     try {
       const niches = ['AI tools', 'machine learning', 'web development', 'productivity'];
+      const trendHints = (await getTrendingTechNews({ limit: 20 })).trendingKeywords;
 
       for (const niche of niches) {
         const [keywords, comparisonKeywords] = await Promise.all([
-          generateKeywords({ niche, count: KEYWORDS_PER_NICHE, includeComparison: true }),
-          generateComparisonKeywords({ niche, count: COMPARISON_KEYWORDS_PER_NICHE }),
+          generateKeywords({
+            niche,
+            count: KEYWORDS_PER_NICHE,
+            includeComparison: true,
+            trendHints,
+          }),
+          generateComparisonKeywords({
+            niche,
+            count: COMPARISON_KEYWORDS_PER_NICHE,
+            trendHints,
+          }),
         ]);
         const allKeywords = Array.from(new Set([...keywords, ...comparisonKeywords]));
 
         for (const keyword of allKeywords) {
+          const intent = estimateIntent(keyword);
+          const difficulty = estimateDifficulty(keyword);
+          const searchVolume = estimateSearchVolume(keyword, intent);
           const existing = await prisma.keyword.findFirst({
             where: { keyword, websiteId: DEFAULT_WEBSITE_ID },
           });
@@ -76,7 +92,8 @@ export const dailyKeywordGenerationJob = {
                 niche,
                 tenantId: DEFAULT_TENANT_ID,
                 websiteId: DEFAULT_WEBSITE_ID,
-                searchVolume: Math.floor(Math.random() * 5000) + 100,
+                difficulty,
+                searchVolume,
                 updatedAt: new Date(),
               },
             });
@@ -87,8 +104,8 @@ export const dailyKeywordGenerationJob = {
                 niche,
                 tenantId: DEFAULT_TENANT_ID,
                 websiteId: DEFAULT_WEBSITE_ID,
-                difficulty: Math.floor(Math.random() * 101),
-                searchVolume: Math.floor(Math.random() * 5000) + 100,
+                difficulty,
+                searchVolume,
               },
             });
           }
@@ -360,6 +377,25 @@ export const weeklyContentRefreshJob = {
   },
 };
 
+/**
+ * Every 2 hours: refresh trending technology news and keywords
+ */
+export const techTrendsRefreshJob = {
+  schedule: TECH_NEWS_SCHEDULE,
+  name: 'Tech Trends Refresh',
+  task: async () => {
+    console.log('[CRON] Starting tech trends refresh job');
+    try {
+      const result = await refreshTrendingTechNews({ maxPerSource: 12 });
+      console.log(
+        `[CRON] Tech trends refresh completed (inserted=${result.inserted}, updated=${result.updated}, keywords=${result.keywords.join(', ')})`
+      );
+    } catch (error) {
+      console.error('[CRON] Error in tech trends refresh:', error);
+    }
+  },
+};
+
 // Store registered jobs
 const registeredJobs: cron.ScheduledTask[] = [];
 
@@ -372,6 +408,7 @@ export function initializeCronJobs() {
     weeklyBlogGenerationJob,
     weeklyMetricsUpdateJob,
     weeklyContentRefreshJob,
+    techTrendsRefreshJob,
   ];
 
   jobs.forEach((jobConfig) => {

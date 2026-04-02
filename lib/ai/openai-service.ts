@@ -106,6 +106,7 @@ export interface KeywordPrompt {
   niche: string;
   count?: number;
   includeComparison?: boolean;
+  trendHints?: string[];
 }
 
 export interface BlogPrompt {
@@ -136,15 +137,19 @@ export interface SocialPostInput {
  * Generate SEO keywords for a given niche
  */
 export async function generateKeywords(prompt: KeywordPrompt): Promise<string[]> {
-  const { niche, count = 5, includeComparison = false } = prompt;
+  const { niche, count = 5, includeComparison = false, trendHints = [] } = prompt;
 
   try {
+    const today = new Date().toISOString().slice(0, 10);
+    const trendContext = trendHints.length
+      ? `Use these current trend hints when relevant: ${trendHints.slice(0, 12).join(', ')}.`
+      : 'Use currently relevant market trends where appropriate.';
     const systemPrompt =
-      'You are an SEO expert. Generate high-quality, long-tail keywords that are relevant and have good search volume. Return only the keywords as a JSON array of strings.';
+      `You are an SEO expert. Today is ${today}. Generate high-quality long-tail keywords with realistic modern intent and strong search potential. Return only a JSON array of strings with no extra text.`;
     const comparisonInstruction = includeComparison
       ? 'At least half of the keywords must be comparison intent and include "vs" between two alternatives.'
       : '';
-    const userPrompt = `Generate ${count} SEO-friendly keywords for the niche: "${niche}". ${comparisonInstruction} Return as JSON array.`;
+    const userPrompt = `Generate ${count} SEO-friendly keywords for niche: "${niche}". ${comparisonInstruction} Prioritize actionable, low-to-medium competition opportunities. ${trendContext}`;
 
     const content = await generateText(`${systemPrompt}\n\n${userPrompt}`);
 
@@ -167,12 +172,15 @@ export async function generateKeywords(prompt: KeywordPrompt): Promise<string[]>
  * Generate comparison intent keywords in "X vs Y" format
  */
 export async function generateComparisonKeywords(prompt: KeywordPrompt): Promise<string[]> {
-  const { niche, count = 5 } = prompt;
+  const { niche, count = 5, trendHints = [] } = prompt;
 
   try {
+    const trendContext = trendHints.length
+      ? `Use these trend hints when relevant: ${trendHints.slice(0, 10).join(', ')}.`
+      : '';
     const systemPrompt =
       'You are an SEO strategist focused on high-intent comparison queries. Return only a JSON array of strings.';
-    const userPrompt = `Generate ${count} comparison keywords for "${niche}" in strict "X vs Y" format. Keep them realistic for search intent. Return as JSON array.`;
+    const userPrompt = `Generate ${count} comparison keywords for "${niche}" in strict "X vs Y" format. Keep them realistic for search intent. ${trendContext} Return as JSON array.`;
     const content = await generateText(`${systemPrompt}\n\n${userPrompt}`);
 
     if (!content) return [];

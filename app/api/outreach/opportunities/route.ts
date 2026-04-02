@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { clampScore, normalizeDomain, parseStatus } from '@/lib/outreach/utils';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,30 +15,40 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = parseStatus(searchParams.get('status'));
     const q = searchParams.get('q') || undefined;
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+      ...(status && { status }),
+      ...(q && {
+        OR: [
+          { targetDomain: { contains: q, mode: 'insensitive' as const } },
+          { contactName: { contains: q, mode: 'insensitive' as const } },
+          { notes: { contains: q, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
 
-    const rows = await prisma.outreachOpportunity.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-        ...(status && { status }),
-        ...(q && {
-          OR: [
-            { targetDomain: { contains: q, mode: 'insensitive' } },
-            { contactName: { contains: q, mode: 'insensitive' } },
-            { notes: { contains: q, mode: 'insensitive' } },
-          ],
-        }),
-      },
-      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
-      take: 300,
-    });
+    const [rows, total] = await Promise.all([
+      prisma.outreachOpportunity.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      prisma.outreachOpportunity.count({ where }),
+    ]);
 
     const summary = rows.reduce<Record<string, number>>((acc, row) => {
       acc[row.status] = (acc[row.status] || 0) + 1;
       return acc;
     }, {});
 
-    return NextResponse.json({ opportunities: rows, summary });
+    return NextResponse.json({
+      opportunities: rows,
+      summary,
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     console.error('[Outreach] GET opportunities error:', error);
     return NextResponse.json(

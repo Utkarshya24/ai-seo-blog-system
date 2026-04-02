@@ -270,3 +270,21 @@ model AdminToken {
   @@index([tenantId])
   @@index([isActive])
 }
+
+model TechNewsItem {
+  id              String   @id @default(cuid())
+  title           String
+  url             String   @unique
+  source          String
+  summary         String?
+  publishedAt     DateTime?
+  score           Int      @default(0)
+  trendingKeywords String[]
+  fetchedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([fetchedAt])
+  @@index([publishedAt])
+  @@index([source])
+}

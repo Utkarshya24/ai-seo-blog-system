@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BarChart3, BookOpen, Eye, FileText, Globe2, Handshake, Home, LayoutDashboard, LogOut, Megaphone, Menu, Search, Sparkles, Users } from 'lucide-react';
+import { ArrowLeft, BarChart3, BookOpen, Eye, FileText, Globe2, Handshake, Home, LayoutDashboard, LogOut, Megaphone, Menu, Newspaper, Search, Sparkles, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,7 @@ const navItems = [
   { href: '/admin/metrics', label: 'Metrics', icon: BarChart3 },
   { href: '/admin/visibility', label: 'Visibility', icon: Eye },
   { href: '/admin/social', label: 'Social', icon: Megaphone },
+  { href: '/admin/tech-news', label: 'Tech News', icon: Newspaper },
   { href: '/admin/outreach', label: 'Outreach', icon: Handshake },
   { href: '/admin/team', label: 'Team', icon: Users },
 ];

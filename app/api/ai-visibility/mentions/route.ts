@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { normalizeUrl, parseProvider } from '@/lib/visibility/utils';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 interface MentionInput {
   provider: string;
@@ -25,23 +26,32 @@ export async function GET(request: NextRequest) {
     const provider = searchParams.get('provider') || undefined;
     const q = searchParams.get('q') || undefined;
     const days = Math.max(1, Math.min(180, Number(searchParams.get('days') || 30)));
+    const { page, limit, skip } = getPaginationParams(request);
 
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+      detectedAt: { gte: fromDate },
+      ...(provider && { provider: parseProvider(provider) }),
+      ...(q && { query: { contains: q, mode: 'insensitive' as const } }),
+    };
 
-    const mentions = await prisma.aiVisibilityMention.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-        detectedAt: { gte: fromDate },
-        ...(provider && { provider: parseProvider(provider) }),
-        ...(q && { query: { contains: q, mode: 'insensitive' } }),
-      },
-      orderBy: [{ detectedAt: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
+    const [mentions, total] = await Promise.all([
+      prisma.aiVisibilityMention.findMany({
+        where,
+        orderBy: [{ detectedAt: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      prisma.aiVisibilityMention.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      mentions,
+      pagination: getPaginationMeta({ page, limit, total }),
     });
-
-    return NextResponse.json({ mentions });
   } catch (error) {
     console.error('[AI Visibility] GET mentions error:', error);
     return NextResponse.json(

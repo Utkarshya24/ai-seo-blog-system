@@ -5,6 +5,7 @@ import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { generateSerpOptimization } from '@/lib/ai/openai-service';
 import { calculateCtr } from '@/lib/experiments/serp';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function formatExperiment(experiment: {
   id: string;
@@ -40,27 +41,36 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const postId = searchParams.get('postId') || undefined;
     const status = searchParams.get('status') as ExperimentStatus | null;
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+      ...(postId && { postId }),
+      ...(status && { status }),
+    };
 
-    const experiments = await prisma.serpExperiment.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-        ...(postId && { postId }),
-        ...(status && { status }),
-      },
-      include: {
-        post: {
-          select: {
-            title: true,
-            slug: true,
+    const [experiments, total] = await Promise.all([
+      prisma.serpExperiment.findMany({
+        where,
+        include: {
+          post: {
+            select: {
+              title: true,
+              slug: true,
+            },
           },
         },
-      },
-      orderBy: { startedAt: 'desc' },
-      take: 100,
-    });
+        orderBy: { startedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.serpExperiment.count({ where }),
+    ]);
 
-    return NextResponse.json({ experiments: experiments.map(formatExperiment) });
+    return NextResponse.json({
+      experiments: experiments.map(formatExperiment),
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     console.error('[SERP Experiment] GET error:', error);
     return NextResponse.json(

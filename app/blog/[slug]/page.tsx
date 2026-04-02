@@ -1,8 +1,10 @@
 import { prisma } from '@/lib/db';
 import { formatDate, generateSlug, generateTableOfContents } from '@/lib/utils/seo';
-import { Metadata, ResolvingMetadata } from 'next';
+import { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ReactNode } from 'react';
+import { BlogCopyActions } from '@/components/blog-copy-actions';
 
 interface BlogPostPageProps {
   params: Promise<{
@@ -11,6 +13,287 @@ interface BlogPostPageProps {
 }
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const tokenRegex =
+    /(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\n]+\*|_[^_\n]+_)/g;
+
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tokenRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith('**') || token.startsWith('__')) {
+      nodes.push(
+        <strong key={`${match.index}-${token}`}>
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith('`')) {
+      nodes.push(
+        <code
+          key={`${match.index}-${token}`}
+          className="rounded bg-secondary px-1.5 py-0.5 text-sm"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else if (token.startsWith('[')) {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        nodes.push(
+          <a
+            key={`${match.index}-${token}`}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="text-primary underline underline-offset-4"
+          >
+            {linkMatch[1]}
+          </a>
+        );
+      } else {
+        nodes.push(token);
+      }
+    } else {
+      nodes.push(
+        <em key={`${match.index}-${token}`}>
+          {token.slice(1, -1)}
+        </em>
+      );
+    }
+
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function renderHeading(level: number, text: string, key: string) {
+  const id = generateSlug(text);
+
+  if (level <= 1) {
+    return (
+      <h1 key={key} id={id} className="mt-8 text-3xl font-bold">
+        {renderInlineMarkdown(text)}
+      </h1>
+    );
+  }
+
+  if (level === 2) {
+    return (
+      <h2 key={key} id={id} className="mt-8 text-2xl font-bold">
+        {renderInlineMarkdown(text)}
+      </h2>
+    );
+  }
+
+  if (level === 3) {
+    return (
+      <h3 key={key} id={id} className="mt-6 text-xl font-bold">
+        {renderInlineMarkdown(text)}
+      </h3>
+    );
+  }
+
+  if (level === 4) {
+    return (
+      <h4 key={key} id={id} className="mt-5 text-lg font-semibold">
+        {renderInlineMarkdown(text)}
+      </h4>
+    );
+  }
+
+  if (level === 5) {
+    return (
+      <h5 key={key} id={id} className="mt-5 text-base font-semibold">
+        {renderInlineMarkdown(text)}
+      </h5>
+    );
+  }
+
+  return (
+    <h6 key={key} id={id} className="mt-4 text-sm font-semibold uppercase tracking-wide">
+      {renderInlineMarkdown(text)}
+    </h6>
+  );
+}
+
+function parseTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const withoutOuterPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '');
+  return withoutOuterPipes.split('|').map((cell) => cell.trim());
+}
+
+function isMarkdownTableDelimiter(line: string): boolean {
+  const cells = parseTableRow(line);
+  if (cells.length === 0) return false;
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderMarkdownContent(content: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const lines = content.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      i += 1;
+      continue;
+    }
+
+    if (line.startsWith('```')) {
+      const fence = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) i += 1;
+      nodes.push(
+        <pre key={`code-${i}`} className="overflow-x-auto rounded-lg bg-secondary p-4 text-sm">
+          <code className={fence ? `language-${fence}` : undefined}>{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      nodes.push(renderHeading(headingMatch[1].length, headingMatch[2].trim(), `h-${i}`));
+      i += 1;
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      nodes.push(<hr key={`hr-${i}`} className="my-8 border-border" />);
+      i += 1;
+      continue;
+    }
+
+    if (/^>\s+/.test(line)) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && /^>\s+/.test(lines[i].trim())) {
+        quoteLines.push(lines[i].trim().replace(/^>\s+/, ''));
+        i += 1;
+      }
+      nodes.push(
+        <blockquote key={`quote-${i}`} className="border-l-4 border-primary/40 pl-4 italic text-muted-foreground">
+          {renderInlineMarkdown(quoteLines.join(' '))}
+        </blockquote>
+      );
+      continue;
+    }
+
+    if (/^[-*+]\s+/.test(line)) {
+      const items: ReactNode[] = [];
+      while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
+        const item = lines[i].trim().replace(/^[-*+]\s+/, '');
+        items.push(<li key={`ul-${i}`}>{renderInlineMarkdown(item)}</li>);
+        i += 1;
+      }
+      nodes.push(
+        <ul key={`list-${i}`} className="list-disc space-y-2 pl-6">
+          {items}
+        </ul>
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const items: ReactNode[] = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        const item = lines[i].trim().replace(/^\d+\.\s+/, '');
+        items.push(<li key={`ol-${i}`}>{renderInlineMarkdown(item)}</li>);
+        i += 1;
+      }
+      nodes.push(
+        <ol key={`olist-${i}`} className="list-decimal space-y-2 pl-6">
+          {items}
+        </ol>
+      );
+      continue;
+    }
+
+    const hasTablePipe = line.includes('|');
+    const nextLine = i + 1 < lines.length ? lines[i + 1].trim() : '';
+    if (hasTablePipe && nextLine && nextLine.includes('|') && isMarkdownTableDelimiter(nextLine)) {
+      const headerCells = parseTableRow(line);
+      i += 2; // skip header + delimiter
+
+      const bodyRows: string[][] = [];
+      while (i < lines.length) {
+        const rowLine = lines[i].trim();
+        if (!rowLine || !rowLine.includes('|')) break;
+        bodyRows.push(parseTableRow(rowLine));
+        i += 1;
+      }
+
+      nodes.push(
+        <div key={`table-${i}`} className="my-6 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-border bg-secondary/40 text-left">
+                {headerCells.map((cell, idx) => (
+                  <th key={`th-${idx}`} className="px-3 py-2 font-semibold">
+                    {renderInlineMarkdown(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bodyRows.map((row, rowIdx) => (
+                <tr key={`tr-${rowIdx}`} className="border-b border-border/60 align-top">
+                  {headerCells.map((_, colIdx) => (
+                    <td key={`td-${rowIdx}-${colIdx}`} className="px-3 py-2">
+                      {renderInlineMarkdown(row[colIdx] || '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    const paragraphLines: string[] = [lines[i].trim()];
+    i += 1;
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !lines[i].trim().startsWith('```') &&
+      !/^(#{1,6})\s+/.test(lines[i].trim()) &&
+      !/^>\s+/.test(lines[i].trim()) &&
+      !/^[-*+]\s+/.test(lines[i].trim()) &&
+      !/^\d+\.\s+/.test(lines[i].trim()) &&
+      !/^(-{3,}|\*{3,}|_{3,})$/.test(lines[i].trim())
+    ) {
+      paragraphLines.push(lines[i].trim());
+      i += 1;
+    }
+
+    nodes.push(
+      <p key={`p-${i}`} className="leading-7">
+        {renderInlineMarkdown(paragraphLines.join(' '))}
+      </p>
+    );
+  }
+
+  return nodes;
+}
 
 function calculateReadingTime(content: string): number {
   return Math.max(1, Math.ceil(content.trim().split(/\s+/).length / 200));
@@ -32,10 +315,7 @@ async function getPost(slug: string) {
   }
 }
 
-export async function generateMetadata(
-  { params }: BlogPostPageProps,
-  _parent: ResolvingMetadata
-): Promise<Metadata> {
+export async function generateMetadata({ params }: BlogPostPageProps): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPost(slug);
 
@@ -167,6 +447,8 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           <p className="mt-4 text-lg text-muted-foreground">
             {post.metaDescription}
           </p>
+
+          <BlogCopyActions markdown={post.content} />
         </header>
 
         {/* Table of Contents */}
@@ -190,34 +472,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
         {/* Content */}
         <div className="prose prose-sm max-w-none space-y-6 text-foreground dark:prose-invert">
-          {post.content.split('\n\n').map((paragraph, idx) => {
-            // Check if it's a heading
-            if (paragraph.startsWith('#')) {
-              const level = paragraph.match(/^#+/)?.[0].length || 2;
-              const text = paragraph.replace(/^#+\s/, '');
-              const id = generateSlug(text);
-
-              const headingClass =
-                level === 2
-                  ? 'text-2xl font-bold'
-                  : level === 3
-                    ? 'text-xl font-bold'
-                    : 'text-lg font-bold';
-
-              return (
-                <h2 key={idx} id={id} className={headingClass}>
-                  {text}
-                </h2>
-              );
-            }
-
-            // Regular paragraph
-            if (paragraph.trim()) {
-              return <p key={idx}>{paragraph}</p>;
-            }
-
-            return null;
-          })}
+          {renderMarkdownContent(post.content)}
         </div>
 
         {/* Footer */}

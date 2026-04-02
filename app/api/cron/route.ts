@@ -5,6 +5,7 @@ import {
   weeklyBlogGenerationJob,
   weeklyMetricsUpdateJob,
   weeklyContentRefreshJob,
+  techTrendsRefreshJob,
 } from '@/lib/cron/cron-service';
 
 export async function POST(request: NextRequest) {
@@ -40,6 +41,11 @@ export async function POST(request: NextRequest) {
       case 'refresh-content':
         await weeklyContentRefreshJob.task();
         result = 'Content refresh completed';
+        break;
+
+      case 'tech-trends':
+        await techTrendsRefreshJob.task();
+        result = 'Tech trends refresh completed';
         break;
 
       default:
@@ -106,6 +112,11 @@ export async function GET(request: NextRequest) {
       case 'refresh-content':
         await weeklyContentRefreshJob.task();
         result = 'Content refresh completed';
+        break;
+
+      case 'tech-trends':
+        await techTrendsRefreshJob.task();
+        result = 'Tech trends refresh completed';
         break;
 
       default:

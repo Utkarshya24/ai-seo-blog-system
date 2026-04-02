@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AdminShell } from '@/components/admin-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
@@ -32,6 +33,10 @@ export default function SocialPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [bannerImageUrl, setBannerImageUrl] = useState('');
+  const [socialImageUrl, setSocialImageUrl] = useState('');
+  const [generatingImage, setGeneratingImage] = useState<'banner' | 'social' | null>(null);
+  const [customImagePrompt, setCustomImagePrompt] = useState('');
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -98,6 +103,47 @@ export default function SocialPage() {
     }
   }
 
+  async function generateImage(variant: 'banner' | 'social') {
+    if (!selectedPostId) return;
+    setGeneratingImage(variant);
+    setError('');
+    setMessage('');
+    try {
+      const res = await tenantFetch('/api/images/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId: selectedPostId,
+          variant,
+          prompt: customImagePrompt.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to generate image');
+        return;
+      }
+
+      const imageUrl = (data.images?.[0] as string | undefined) || '';
+      if (!imageUrl) {
+        setError('No image URL returned from generator.');
+        return;
+      }
+
+      if (variant === 'banner') {
+        setBannerImageUrl(imageUrl);
+      } else {
+        setSocialImageUrl(imageUrl);
+      }
+      setMessage(`${variant === 'banner' ? 'Banner' : 'Social'} image generated.`);
+    } catch (imageError) {
+      console.error('[Social] generateImage error:', imageError);
+      setError('Failed to generate image.');
+    } finally {
+      setGeneratingImage(null);
+    }
+  }
+
   useEffect(() => {
     void loadDrafts(selectedPostId);
   }, [selectedPostId, loadDrafts]);
@@ -131,28 +177,55 @@ export default function SocialPage() {
                 <Spinner className="h-8 w-8" />
               </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="md:col-span-2">
-                  <label className="mb-1.5 block text-sm font-medium">Published Post</label>
-                  <select
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={selectedPostId}
-                    onChange={(e) => setSelectedPostId(e.target.value)}
-                  >
-                    {posts.length === 0 ? <option value="">No published posts</option> : null}
-                    {posts.map((post) => (
-                      <option key={post.id} value={post.id}>
-                        {post.title}
-                      </option>
-                    ))}
-                  </select>
+              <>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium">Published Post</label>
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={selectedPostId}
+                      onChange={(e) => setSelectedPostId(e.target.value)}
+                    >
+                      {posts.length === 0 ? <option value="">No published posts</option> : null}
+                      {posts.map((post) => (
+                        <option key={post.id} value={post.id}>
+                          {post.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button className="w-full" onClick={generateDrafts} disabled={generating || !selectedPostId}>
+                      {generating ? 'Generating...' : 'Generate LinkedIn + X'}
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex items-end">
-                  <Button className="w-full" onClick={generateDrafts} disabled={generating || !selectedPostId}>
-                    {generating ? 'Generating...' : 'Generate LinkedIn + X'}
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium">Custom Image Prompt (optional)</label>
+                    <Input
+                      value={customImagePrompt}
+                      onChange={(e) => setCustomImagePrompt(e.target.value)}
+                      placeholder="e.g., modern local SEO dashboard visual, clean blue gradients, no text"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => void generateImage('banner')}
+                    disabled={generatingImage !== null || !selectedPostId}
+                  >
+                    {generatingImage === 'banner' ? 'Generating Banner...' : 'Generate Banner Image'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => void generateImage('social')}
+                    disabled={generatingImage !== null || !selectedPostId}
+                  >
+                    {generatingImage === 'social' ? 'Generating Social...' : 'Generate Social Image'}
                   </Button>
                 </div>
-              </div>
+              </>
             )}
 
             {error ? (
@@ -167,6 +240,58 @@ export default function SocialPage() {
             ) : null}
           </CardContent>
         </Card>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Blog Banner Image</CardTitle>
+              <CardDescription>Generated from selected post via Gemini image model.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {bannerImageUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={bannerImageUrl} alt="Generated blog banner" className="w-full rounded-md border border-border" />
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => copyText(bannerImageUrl)}>
+                      Copy Banner URL
+                    </Button>
+                    <Button variant="outline" onClick={() => window.open(bannerImageUrl, '_blank', 'noopener,noreferrer')}>
+                      Open
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No banner image generated yet.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Social Post Image</CardTitle>
+              <CardDescription>Square asset for LinkedIn/X posts.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {socialImageUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={socialImageUrl} alt="Generated social post visual" className="w-full rounded-md border border-border" />
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => copyText(socialImageUrl)}>
+                      Copy Social URL
+                    </Button>
+                    <Button variant="outline" onClick={() => window.open(socialImageUrl, '_blank', 'noopener,noreferrer')}>
+                      Open
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">No social image generated yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>

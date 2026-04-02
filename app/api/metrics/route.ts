@@ -3,6 +3,7 @@ import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function formatMetricsForResponse(metrics: {
   id: string;
@@ -67,15 +68,25 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all metrics
-    const allMetrics = await prisma.seoMetrics.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+    };
+    const [allMetrics, total] = await Promise.all([
+      prisma.seoMetrics.findMany({
+        where,
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.seoMetrics.count({ where }),
+    ]);
 
-    return NextResponse.json({ metrics: allMetrics.map(formatMetricsForResponse) });
+    return NextResponse.json({
+      metrics: allMetrics.map(formatMetricsForResponse),
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     console.error('[API] Error fetching metrics:', error);
     return NextResponse.json(

@@ -26,6 +26,7 @@ It handles:
 13. AI visibility tracker for ChatGPT/Perplexity citations (mentions + share).
 14. Backlink outreach CRM workflow with status pipeline and follow-up tracking.
 15. LinkedIn + Twitter(X) SEO social post generator from published blogs.
+16. Tech news trend tracker with 2-hour refresh cron and trending keyword extraction.
 
 ## 2) Tech Stack
 
@@ -71,6 +72,7 @@ Common optional variables:
 - `EXTERNAL_PUBLISH_WEBHOOK_URL`
 - `EXTERNAL_PUBLISH_WEBHOOK_SECRET`
 - `CONTENT_API_KEY`
+- `TECH_NEWS_SCHEDULE`
 
 ## 4) Install and Run
 
@@ -158,6 +160,7 @@ Main endpoints:
 - `PATCH /api/outreach/opportunities/[id]`
 - `GET/POST /api/social/generate`
 - `GET/POST /api/cron`
+- `GET/POST /api/tech-news`
 
 Full API docs:
 - `API.md`
@@ -199,6 +202,7 @@ Cron jobs currently supported:
 - `generate-keywords`
 - `generate-blog`
 - `update-metrics`
+- `tech-trends`
 - `refresh-content` (automated refresh for declining published posts)
 
 ## 12) Troubleshooting

@@ -3,6 +3,7 @@ import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function classifyOpportunity(impressions: number, ctr: number, position: number) {
   if (impressions >= 500 && ctr < 2.5 && position <= 20) return 'high';
@@ -16,30 +17,36 @@ export async function GET(request: NextRequest) {
     if (!authResult.ok) return authResult.response;
 
     const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+    };
 
-    const rows = await prisma.seoMetrics.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-      },
-      include: {
-        post: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            metaDescription: true,
-            keyword: {
-              select: {
-                keyword: true,
+    const [rows, total] = await Promise.all([
+      prisma.seoMetrics.findMany({
+        where,
+        include: {
+          post: {
+            select: {
+              id: true,
+              title: true,
+              slug: true,
+              metaDescription: true,
+              keyword: {
+                select: {
+                  keyword: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: [{ impressions: 'desc' }, { updatedAt: 'desc' }],
-      take: 50,
-    });
+        orderBy: [{ impressions: 'desc' }, { updatedAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+      prisma.seoMetrics.count({ where }),
+    ]);
 
     const opportunities = rows
       .map((row) => {
@@ -74,7 +81,10 @@ export async function GET(request: NextRequest) {
         return scoreB - scoreA;
       });
 
-    return NextResponse.json({ opportunities });
+    return NextResponse.json({
+      opportunities,
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     console.error('[SEO Opportunities] Error:', error);
     return NextResponse.json(

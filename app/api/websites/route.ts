@@ -3,6 +3,7 @@ import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { toWebsiteSafe } from '@/lib/websites/presenter';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,15 +17,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: tenant mismatch' }, { status: 403 });
     }
     const effectiveTenantId = auth.isGlobal ? tenantId : auth.tenantId || tenantId;
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(effectiveTenantId && { tenantId: effectiveTenantId }),
+    };
 
-    const websites = await prisma.website.findMany({
-      where: {
-        ...(effectiveTenantId && { tenantId: effectiveTenantId }),
-      },
-      orderBy: { createdAt: 'desc' },
+    const [websites, total] = await Promise.all([
+      prisma.website.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.website.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      websites: websites.map(toWebsiteSafe),
+      pagination: getPaginationMeta({ page, limit, total }),
     });
-
-    return NextResponse.json({ websites: websites.map(toWebsiteSafe) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch websites' },

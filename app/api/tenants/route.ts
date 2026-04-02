@@ -3,27 +3,38 @@ import { AdminRole } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { generateSlug } from '@/lib/utils/seo';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 export async function GET(request: NextRequest) {
   try {
     const authResult = await requireAdminAuth(request, AdminRole.VIEWER);
     if (!authResult.ok) return authResult.response;
     const { auth } = authResult;
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(auth.isGlobal ? {} : { id: auth.tenantId || '' }),
+    };
 
-    const tenants = await prisma.tenant.findMany({
-      where: {
-        ...(auth.isGlobal ? {} : { id: auth.tenantId || '' }),
-      },
-      include: {
-        websites: {
-          where: { isActive: true },
-          select: { id: true, name: true, domain: true, baseUrl: true, niche: true },
+    const [tenants, total] = await Promise.all([
+      prisma.tenant.findMany({
+        where,
+        include: {
+          websites: {
+            where: { isActive: true },
+            select: { id: true, name: true, domain: true, baseUrl: true, niche: true },
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.tenant.count({ where }),
+    ]);
 
-    return NextResponse.json({ tenants });
+    return NextResponse.json({
+      tenants,
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch tenants' },

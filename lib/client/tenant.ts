@@ -88,8 +88,18 @@ export function buildTenantHeaders(headers?: HeadersInit): Headers {
 }
 
 export async function tenantFetch(input: RequestInfo | URL, init?: RequestInit) {
-  return fetch(input, {
+  const response = await fetch(input, {
     ...init,
     headers: buildTenantHeaders(init?.headers),
   });
+
+  if (typeof window !== 'undefined' && response.status === 401) {
+    clearStoredWorkspace();
+    const currentPath = window.location.pathname;
+    if (currentPath !== '/auth') {
+      window.location.assign('/auth');
+    }
+  }
+
+  return response;
 }

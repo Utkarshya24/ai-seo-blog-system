@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { handlePublicApiOptions, withPublicApiCors } from '@/lib/integrations/public-api';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 const CONTENT_API_KEY = process.env.CONTENT_API_KEY || '';
 
@@ -26,10 +27,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const niche = searchParams.get('niche') || undefined;
     const q = searchParams.get('q') || undefined;
-    const page = Math.max(1, Number(searchParams.get('page') || '1'));
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit') || '20')));
+    const { page, limit, skip } = getPaginationParams(request);
     const includeContent = searchParams.get('includeContent') === 'true';
-    const skip = (page - 1) * limit;
 
     const where = {
       status: 'published',
@@ -58,10 +57,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     return withPublicApiCors(NextResponse.json({
-      page,
-      limit,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
+      pagination: getPaginationMeta({ page, limit, total }),
       posts: posts.map((post) => ({
         id: post.id,
         title: post.title,

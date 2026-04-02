@@ -4,6 +4,16 @@ import { prisma } from '@/lib/db';
 import { generateComparisonKeywords, generateKeywords } from '@/lib/ai/openai-service';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { fetchKeywordSearchVolumes } from '@/lib/integrations/google-search-console';
+import { decryptText } from '@/lib/security/crypto';
+import { refreshAccessToken } from '@/lib/integrations/google-oauth';
+import {
+  estimateDifficulty,
+  estimateIntent,
+  estimateSearchVolume,
+  type KeywordIntent,
+} from '@/lib/seo/keyword-metrics';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -22,29 +32,36 @@ function getUserFacingError(error: unknown): string {
   return error instanceof Error ? error.message : 'Failed to generate keywords';
 }
 
-type KeywordIntent = 'informational' | 'comparison' | 'commercial' | 'transactional';
-
-function estimateIntent(keyword: string): KeywordIntent {
-  const text = keyword.toLowerCase();
-  if (/\b(vs|versus|alternative|compare)\b/.test(text)) return 'comparison';
-  if (/\b(price|pricing|buy|best|top|review|reviews)\b/.test(text)) return 'commercial';
-  if (/\b(sign up|template|download|tool|software)\b/.test(text)) return 'transactional';
-  return 'informational';
+function dateNDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
 }
 
-function estimateDifficulty(keyword: string): number {
-  const words = keyword.trim().split(/\s+/).length;
-  const hasBrand = /\b(google|facebook|openai|apple|amazon|microsoft)\b/i.test(keyword);
-  let score = 35 + Math.max(0, 6 - words) * 8;
-  if (hasBrand) score += 8;
-  return Math.min(95, Math.max(12, score));
-}
+async function getRecentTrendHints(limit: number = 12): Promise<string[]> {
+  try {
+    const latest = await prisma.techNewsItem.findMany({
+      orderBy: { fetchedAt: 'desc' },
+      take: 25,
+      select: { trendingKeywords: true },
+    });
 
-function estimateSearchVolume(keyword: string, intent: KeywordIntent): number {
-  const base = Math.max(120, 2200 - keyword.length * 20);
-  if (intent === 'comparison') return Math.round(base * 1.15);
-  if (intent === 'commercial') return Math.round(base * 1.1);
-  return Math.round(base);
+    const freq = new Map<string, number>();
+    for (const row of latest) {
+      for (const keyword of row.trendingKeywords || []) {
+        const normalized = keyword.trim().toLowerCase();
+        if (!normalized) continue;
+        freq.set(normalized, (freq.get(normalized) || 0) + 1);
+      }
+    }
+
+    return Array.from(freq.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([word]) => word);
+  } catch {
+    return [];
+  }
 }
 
 function calculatePriorityScore(params: {
@@ -73,6 +90,9 @@ function formatKeywordForResponse(keyword: {
   generatedAt: Date;
   updatedAt: Date;
   posts?: Array<{ id: string }>;
+  searchVolumeSource?: 'gsc' | 'estimated';
+  searchVolumeStartDate?: string;
+  searchVolumeEndDate?: string;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
   const intent = estimateIntent(keyword.keyword);
@@ -87,6 +107,9 @@ function formatKeywordForResponse(keyword: {
     ...keyword,
     intent,
     priorityScore,
+    searchVolumeSource: keyword.searchVolumeSource || 'estimated',
+    searchVolumeStartDate: keyword.searchVolumeStartDate,
+    searchVolumeEndDate: keyword.searchVolumeEndDate,
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -108,14 +131,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const trendHints = await getRecentTrendHints(12);
+
     // Generate keywords using Gemini
     let keywords: string[] = [];
     if (mode === 'comparison') {
-      keywords = await generateComparisonKeywords({ niche, count });
+      keywords = await generateComparisonKeywords({ niche, count, trendHints });
     } else if (mode === 'standard') {
-      keywords = await generateKeywords({ niche, count, includeComparison: false });
+      keywords = await generateKeywords({ niche, count, includeComparison: false, trendHints });
     } else {
-      keywords = await generateKeywords({ niche, count, includeComparison: true });
+      keywords = await generateKeywords({ niche, count, includeComparison: true, trendHints });
     }
 
     if (keywords.length === 0) {
@@ -125,18 +150,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let gscVolumeMap = new Map<string, number>();
+    const gscStartDate = dateNDaysAgo(30);
+    const gscEndDate = dateNDaysAgo(1);
+    let gscEnabled = false;
+
+    if (websiteId) {
+      try {
+        const website = await prisma.website.findUnique({
+          where: { id: websiteId },
+          select: {
+            gscProperty: true,
+            gscRefreshTokenEnc: true,
+          },
+        });
+
+        const siteUrl = website?.gscProperty?.trim() || process.env.GSC_SITE_URL?.trim();
+        let accessToken = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim();
+        if (!accessToken && website?.gscRefreshTokenEnc) {
+          const refreshToken = decryptText(website.gscRefreshTokenEnc);
+          accessToken = await refreshAccessToken(refreshToken);
+        }
+
+        if (siteUrl && accessToken) {
+          gscVolumeMap = await fetchKeywordSearchVolumes({
+            siteUrl,
+            startDate: gscStartDate,
+            endDate: gscEndDate,
+            accessToken,
+            keywords,
+          });
+          gscEnabled = true;
+        }
+      } catch (gscError) {
+        // Non-fatal: keep keyword generation working even if GSC fetch fails.
+        console.warn('[API] GSC keyword volume fetch skipped:', gscError);
+      }
+    }
+
     // Save keywords to database (upsert avoids failures on duplicate unique keywords)
     const savedKeywords = await Promise.all(
       keywords.map(async (keyword) => {
+        const normalizedKeyword = keyword.trim().toLowerCase();
         const intent = estimateIntent(keyword);
         const difficulty = estimateDifficulty(keyword);
-        const searchVolume = estimateSearchVolume(keyword, intent);
+        const gscSearchVolume = gscVolumeMap.get(normalizedKeyword);
+        const searchVolume = Number.isFinite(gscSearchVolume)
+          ? Number(gscSearchVolume)
+          : estimateSearchVolume(keyword, intent);
+        const searchVolumeSource: 'gsc' | 'estimated' = Number.isFinite(gscSearchVolume)
+          ? 'gsc'
+          : 'estimated';
         const existing = await prisma.keyword.findFirst({
           where: { keyword, websiteId },
         });
 
         if (existing) {
-          return prisma.keyword.update({
+          const updated = await prisma.keyword.update({
             where: { id: existing.id },
             data: {
               niche,
@@ -147,9 +217,15 @@ export async function POST(request: NextRequest) {
               updatedAt: new Date(),
             },
           });
+          return {
+            ...updated,
+            searchVolumeSource,
+            searchVolumeStartDate: searchVolumeSource === 'gsc' ? gscStartDate : undefined,
+            searchVolumeEndDate: searchVolumeSource === 'gsc' ? gscEndDate : undefined,
+          };
         }
 
-        return prisma.keyword.create({
+        const created = await prisma.keyword.create({
           data: {
             keyword,
             niche,
@@ -159,6 +235,12 @@ export async function POST(request: NextRequest) {
             searchVolume,
           },
         });
+        return {
+          ...created,
+          searchVolumeSource,
+          searchVolumeStartDate: searchVolumeSource === 'gsc' ? gscStartDate : undefined,
+          searchVolumeEndDate: searchVolumeSource === 'gsc' ? gscEndDate : undefined,
+        };
       })
     );
 
@@ -166,6 +248,8 @@ export async function POST(request: NextRequest) {
       success: true,
       keywords: savedKeywords.map(formatKeywordForResponse),
       count: savedKeywords.length,
+      searchVolumeMode: gscEnabled ? 'gsc+fallback' : 'estimated',
+      searchVolumeRange: { startDate: gscStartDate, endDate: gscEndDate },
     });
   } catch (error) {
     console.error('[API] Keyword generation error:', error);
@@ -187,35 +271,44 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get('q') || undefined;
     const minDifficulty = searchParams.get('minDifficulty');
     const maxDifficulty = searchParams.get('maxDifficulty');
-
-    const keywords = await prisma.keyword.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-        ...(status === 'pending' && { posts: { none: {} } }),
-        ...(status === 'used' && { posts: { some: {} } }),
-        ...(niche && { niche: { contains: niche, mode: 'insensitive' } }),
-        ...(q && { keyword: { contains: q, mode: 'insensitive' } }),
-        ...((minDifficulty || maxDifficulty) && {
-          difficulty: {
-            ...(minDifficulty && { gte: Number(minDifficulty) }),
-            ...(maxDifficulty && { lte: Number(maxDifficulty) }),
-          },
-        }),
-      },
-      include: {
-        posts: {
-          select: { id: true },
-          take: 1,
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+      ...(status === 'pending' && { posts: { none: {} } }),
+      ...(status === 'used' && { posts: { some: {} } }),
+      ...(niche && { niche: { contains: niche, mode: 'insensitive' as const } }),
+      ...(q && { keyword: { contains: q, mode: 'insensitive' as const } }),
+      ...((minDifficulty || maxDifficulty) && {
+        difficulty: {
+          ...(minDifficulty && { gte: Number(minDifficulty) }),
+          ...(maxDifficulty && { lte: Number(maxDifficulty) }),
         },
-      },
-      orderBy: { generatedAt: 'desc' },
-      take: 50,
-    });
+      }),
+    };
+
+    const [keywords, total] = await Promise.all([
+      prisma.keyword.findMany({
+        where,
+        include: {
+          posts: {
+            select: { id: true },
+            take: 1,
+          },
+        },
+        orderBy: { generatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.keyword.count({ where }),
+    ]);
 
     const formatted = keywords.map(formatKeywordForResponse);
-    formatted.sort((a, b) => b.priorityScore - a.priorityScore);
-    return NextResponse.json({ keywords: formatted });
+    formatted.sort((a: { priorityScore: number; }, b: { priorityScore: number; }) => b.priorityScore - a.priorityScore);
+    return NextResponse.json({
+      keywords: formatted,
+      pagination: getPaginationMeta({ page, limit, total }),
+    });
   } catch (error) {
     console.error('[API] Error fetching keywords:', error);
     return NextResponse.json(

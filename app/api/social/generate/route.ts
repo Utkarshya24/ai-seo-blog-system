@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { generateSocialPosts } from '@/lib/ai/openai-service';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function toSocialUrl(baseUrl: string | null | undefined, slug: string): string {
   if (!baseUrl) return `https://example.com/blog/${slug}`;
@@ -23,18 +24,27 @@ export async function GET(request: NextRequest) {
     if (!postId) {
       return NextResponse.json({ error: 'postId is required' }, { status: 400 });
     }
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      postId,
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+    };
 
-    const drafts = await prisma.socialPostDraft.findMany({
-      where: {
-        postId,
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
+    const [drafts, total] = await Promise.all([
+      prisma.socialPostDraft.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.socialPostDraft.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      drafts,
+      pagination: getPaginationMeta({ page, limit, total }),
     });
-
-    return NextResponse.json({ drafts });
   } catch (error) {
     console.error('[Social] GET error:', error);
     return NextResponse.json(

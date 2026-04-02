@@ -5,6 +5,7 @@ import { generateBlogPost, generateMetaDescription } from '@/lib/ai/openai-servi
 import { generateSlug, isValidSeoTitle, SEO_TITLE_MAX_LENGTH, toSeoTitle } from '@/lib/utils/seo';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
+import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -139,26 +140,33 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || undefined;
     const keywordId = searchParams.get('keywordId') || undefined;
+    const { page, limit, skip } = getPaginationParams(request);
+    const where = {
+      ...(tenantId && { tenantId }),
+      ...(websiteId && { websiteId }),
+      ...(status && { status }),
+      ...(keywordId && { keywordId }),
+    };
 
-    const posts = await prisma.post.findMany({
-      where: {
-        ...(tenantId && { tenantId }),
-        ...(websiteId && { websiteId }),
-        ...(status && { status }),
-        ...(keywordId && { keywordId }),
-      },
-      include: {
-        keyword: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+    const [posts, total] = await Promise.all([
+      prisma.post.findMany({
+        where,
+        include: {
+          keyword: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.post.count({ where }),
+    ]);
 
     return NextResponse.json({
       posts: posts.map((post) => ({
         ...post,
         readingTime: calculateReadingTime(post.content),
       })),
+      pagination: getPaginationMeta({ page, limit, total }),
     });
   } catch (error) {
     console.error('[API] Error fetching posts:', error);

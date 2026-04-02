@@ -19,6 +19,9 @@ interface Keyword {
   priorityScore?: number;
   difficulty: number;
   searchVolume: number;
+  searchVolumeSource?: 'gsc' | 'estimated';
+  searchVolumeStartDate?: string;
+  searchVolumeEndDate?: string;
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -198,7 +201,14 @@ export default function KeywordsManager() {
                         <TableCell className="capitalize">{keyword.intent || 'informational'}</TableCell>
                         <TableCell>{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
                         <TableCell>{keyword.difficulty}</TableCell>
-                        <TableCell>{keyword.searchVolume}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{keyword.searchVolume}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {keyword.searchVolumeSource === 'gsc'
+                              ? `GSC ${keyword.searchVolumeStartDate || ''} to ${keyword.searchVolumeEndDate || ''}`
+                              : 'Estimated'}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
                           {new Date(keyword.generatedAt).toLocaleString()}
                         </TableCell>
