@@ -31,9 +31,20 @@ interface Keyword {
   trendImpressionsPrev7?: number;
   trendBasis?: 'exact' | 'close_match' | 'none';
   trendCloseMatches?: Array<{ query: string; impressions: number }>;
+  marketTrendStatus?: 'up' | 'stable' | 'down' | 'no_data' | 'not_available';
+  marketTrendGrowthPct?: number | null;
+  marketTrendLast7?: number;
+  marketTrendPrev7?: number;
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 function getTrendLabel(keyword: Keyword): string {
@@ -54,8 +65,32 @@ function getTrendToneClass(keyword: Keyword): string {
   return 'text-muted-foreground';
 }
 
+function getMarketTrendLabel(keyword: Keyword): string {
+  const status = keyword.marketTrendStatus || 'not_available';
+  if (status === 'up') return 'Market Up';
+  if (status === 'down') return 'Market Down';
+  if (status === 'stable') return 'Market Stable';
+  if (status === 'no_data') return 'Market No Data';
+  return 'Market N/A';
+}
+
+function getMarketTrendToneClass(keyword: Keyword): string {
+  const status = keyword.marketTrendStatus || 'not_available';
+  if (status === 'up') return 'text-emerald-600';
+  if (status === 'down') return 'text-rose-600';
+  if (status === 'stable') return 'text-amber-600';
+  return 'text-muted-foreground';
+}
+
 export default function KeywordsManager() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+  });
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [niche, setNiche] = useState('');
   const [count, setCount] = useState(5);
@@ -64,16 +99,19 @@ export default function KeywordsManager() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    void fetchKeywords();
-  }, []);
+    void fetchKeywords(page);
+  }, [page]);
 
-  async function fetchKeywords() {
+  async function fetchKeywords(nextPage: number) {
     setLoading(true);
     setError('');
     try {
-      const res = await tenantFetch('/api/keywords/generate');
+      const res = await tenantFetch(`/api/keywords/generate?page=${nextPage}&limit=20`);
       const data = await res.json();
       setKeywords(data.keywords || []);
+      if (data.pagination) {
+        setPagination(data.pagination);
+      }
     } catch (fetchError) {
       console.error('[Keywords] Error fetching:', fetchError);
       setError('Unable to load keywords right now.');
@@ -97,7 +135,8 @@ export default function KeywordsManager() {
 
       const data = await res.json();
       if (data.success) {
-        await fetchKeywords();
+        setPage(1);
+        await fetchKeywords(1);
         setNiche('');
       } else {
         setError(data.error || 'Keyword generation failed.');
@@ -245,7 +284,7 @@ export default function KeywordsManager() {
         <Card>
           <CardHeader>
             <CardTitle>Keyword Backlog</CardTitle>
-            <CardDescription>{keywords.length} records tracked</CardDescription>
+            <CardDescription>{pagination.total} records tracked</CardDescription>
           </CardHeader>
           <CardContent className="min-w-0">
             {loading ? (
@@ -286,6 +325,15 @@ export default function KeywordsManager() {
                           </span>
                         </p>
                         <p className="col-span-2 text-muted-foreground">
+                          Market:{' '}
+                          <span className={getMarketTrendToneClass(keyword)}>
+                            {getMarketTrendLabel(keyword)}
+                            {typeof keyword.marketTrendGrowthPct === 'number'
+                              ? ` (${keyword.marketTrendGrowthPct >= 0 ? '+' : ''}${keyword.marketTrendGrowthPct}%)`
+                              : ''}
+                          </span>
+                        </p>
+                        <p className="col-span-2 text-muted-foreground">
                           7d Impr: <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span> | Prev 7d:{' '}
                           <span className="text-foreground">{(keyword.trendImpressionsPrev7 || 0).toLocaleString()}</span>
                         </p>
@@ -322,6 +370,7 @@ export default function KeywordsManager() {
                       <TableHead>Priority</TableHead>
                       <TableHead>Difficulty</TableHead>
                       <TableHead>Trend</TableHead>
+                      <TableHead>Market</TableHead>
                       <TableHead>Search Volume</TableHead>
                       <TableHead className="hidden md:table-cell">Generated</TableHead>
                       <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -364,6 +413,17 @@ export default function KeywordsManager() {
                           ) : null}
                         </TableCell>
                         <TableCell>
+                          <div className={`text-sm font-medium ${getMarketTrendToneClass(keyword)}`}>
+                            {getMarketTrendLabel(keyword)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {typeof keyword.marketTrendGrowthPct === 'number'
+                              ? `${keyword.marketTrendGrowthPct >= 0 ? '+' : ''}${keyword.marketTrendGrowthPct}%`
+                              : 'n/a'}
+                            {` | ${keyword.marketTrendLast7 || 0} vs ${keyword.marketTrendPrev7 || 0}`}
+                          </div>
+                        </TableCell>
+                        <TableCell>
                           <div className="font-medium">{keyword.searchVolume}</div>
                           <div className="text-xs text-muted-foreground">
                             {keyword.searchVolumeSource === 'gsc'
@@ -384,6 +444,29 @@ export default function KeywordsManager() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                      disabled={loading || page <= 1}
+                    >
+                      Previous 20
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPage((prev) => Math.min(pagination.totalPages, prev + 1))}
+                      disabled={loading || page >= pagination.totalPages}
+                    >
+                      Next 20
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : (

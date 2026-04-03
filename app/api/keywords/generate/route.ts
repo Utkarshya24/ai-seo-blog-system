@@ -83,6 +83,7 @@ function calculatePriorityScore(params: {
 
 type KeywordTrendStatus = 'up' | 'stable' | 'down' | 'new' | 'no_data' | 'not_available';
 type KeywordTrendBasis = 'exact' | 'close_match' | 'none';
+type MarketTrendStatus = 'up' | 'stable' | 'down' | 'no_data' | 'not_available';
 
 const NOISE_TOKENS = new Set([
   'a',
@@ -120,6 +121,104 @@ function getTokenOverlapScore(keywordTokens: string[], queryTokens: string[]): n
   const querySet = new Set(queryTokens);
   const overlap = keywordTokens.filter((token) => querySet.has(token)).length;
   return overlap;
+}
+
+function safeJsonParse<T>(text: string): T {
+  return JSON.parse(text.replace(/^\)\]\}',?\n/, '')) as T;
+}
+
+function classifyMarketTrend(last7: number, prev7: number): MarketTrendStatus {
+  if (last7 === 0 && prev7 === 0) return 'no_data';
+  if (prev7 <= 0) return last7 > 0 ? 'up' : 'no_data';
+  const growth = ((last7 - prev7) / prev7) * 100;
+  if (growth >= 20) return 'up';
+  if (growth < -10) return 'down';
+  return 'stable';
+}
+
+const marketTrendCache = new Map<
+  string,
+  { expiresAt: number; value: { marketTrendStatus: MarketTrendStatus; marketTrendGrowthPct: number | null; marketTrendLast7: number; marketTrendPrev7: number } }
+>();
+
+async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
+  marketTrendStatus: MarketTrendStatus;
+  marketTrendGrowthPct: number | null;
+  marketTrendLast7: number;
+  marketTrendPrev7: number;
+}> {
+  const cacheKey = keyword.trim().toLowerCase();
+  const cached = marketTrendCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  try {
+    const reqPayload = {
+      comparisonItem: [{ keyword, geo: 'US', time: 'today 3-m' }],
+      category: 0,
+      property: '',
+    };
+    const exploreUrl = `https://trends.google.com/trends/api/explore?hl=en-US&tz=0&req=${encodeURIComponent(
+      JSON.stringify(reqPayload)
+    )}`;
+    const exploreRes = await fetch(exploreUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json, text/plain, */*' },
+      cache: 'no-store',
+    });
+    if (!exploreRes.ok) throw new Error(`explore ${exploreRes.status}`);
+
+    const exploreText = await exploreRes.text();
+    const explore = safeJsonParse<{ widgets?: Array<{ id?: string; token?: string; request?: unknown }> }>(exploreText);
+    const widget = (explore.widgets || []).find((row) => row.id === 'TIMESERIES');
+    if (!widget?.token || !widget.request) throw new Error('missing timeseries widget');
+
+    const multilineUrl =
+      `https://trends.google.com/trends/api/widgetdata/multiline?hl=en-US&tz=0` +
+      `&req=${encodeURIComponent(JSON.stringify(widget.request))}&token=${encodeURIComponent(widget.token)}`;
+    const multilineRes = await fetch(multilineUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json, text/plain, */*' },
+      cache: 'no-store',
+    });
+    if (!multilineRes.ok) throw new Error(`multiline ${multilineRes.status}`);
+
+    const multilineText = await multilineRes.text();
+    const multiline = safeJsonParse<{ default?: { timelineData?: Array<{ value?: number[] }> } }>(multilineText);
+    const points = (multiline.default?.timelineData || [])
+      .map((row) => Number(row.value?.[0] || 0))
+      .filter((value) => Number.isFinite(value));
+
+    if (points.length < 14) {
+      const value = {
+        marketTrendStatus: 'no_data' as MarketTrendStatus,
+        marketTrendGrowthPct: null,
+        marketTrendLast7: 0,
+        marketTrendPrev7: 0,
+      };
+      marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 6 * 60 * 60 * 1000, value });
+      return value;
+    }
+
+    const last7 = points.slice(-7).reduce((sum, value) => sum + value, 0);
+    const prev7 = points.slice(-14, -7).reduce((sum, value) => sum + value, 0);
+    const marketTrendGrowthPct = computeTrendGrowthPct(last7, prev7);
+    const value = {
+      marketTrendStatus: classifyMarketTrend(last7, prev7),
+      marketTrendGrowthPct,
+      marketTrendLast7: last7,
+      marketTrendPrev7: prev7,
+    };
+    marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 6 * 60 * 60 * 1000, value });
+    return value;
+  } catch (error) {
+    console.warn('[API] Google Trends fetch failed:', error);
+    const fallback = {
+      marketTrendStatus: 'not_available' as MarketTrendStatus,
+      marketTrendGrowthPct: null,
+      marketTrendLast7: 0,
+      marketTrendPrev7: 0,
+    };
+    marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 30 * 60 * 1000, value: fallback });
+    return fallback;
+  }
 }
 
 function findCloseMatches(keyword: string, rows: GscTopQueryRow[], take: number = 3): GscTopQueryRow[] {
@@ -175,6 +274,10 @@ function formatKeywordForResponse(keyword: {
   trendImpressionsPrev7?: number;
   trendBasis?: KeywordTrendBasis;
   trendCloseMatches?: Array<{ query: string; impressions: number }>;
+  marketTrendStatus?: MarketTrendStatus;
+  marketTrendGrowthPct?: number | null;
+  marketTrendLast7?: number;
+  marketTrendPrev7?: number;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
   const intent = estimateIntent(keyword.keyword);
@@ -198,6 +301,10 @@ function formatKeywordForResponse(keyword: {
     trendImpressionsPrev7: keyword.trendImpressionsPrev7 ?? 0,
     trendBasis: keyword.trendBasis || 'none',
     trendCloseMatches: keyword.trendCloseMatches || [],
+    marketTrendStatus: keyword.marketTrendStatus || 'not_available',
+    marketTrendGrowthPct: keyword.marketTrendGrowthPct ?? null,
+    marketTrendLast7: keyword.marketTrendLast7 ?? 0,
+    marketTrendPrev7: keyword.marketTrendPrev7 ?? 0,
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -481,7 +588,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const formatted = keywords.map((row) => {
+    const marketSignals = await Promise.all(keywords.map((row) => fetchGoogleTrendsMarketSignal(row.keyword)));
+
+    const formatted = keywords.map((row, idx) => {
       const normalized = row.keyword.trim().toLowerCase();
       const gscVolume = gscVolumeMap.get(normalized);
       const hasGscVolume = Number.isFinite(gscVolume);
@@ -521,6 +630,10 @@ export async function GET(request: NextRequest) {
         trendImpressionsPrev7: prev7,
         trendBasis,
         trendCloseMatches: trendBasis === 'close_match' ? closeMatchesLast7 : [],
+        marketTrendStatus: marketSignals[idx]?.marketTrendStatus,
+        marketTrendGrowthPct: marketSignals[idx]?.marketTrendGrowthPct,
+        marketTrendLast7: marketSignals[idx]?.marketTrendLast7,
+        marketTrendPrev7: marketSignals[idx]?.marketTrendPrev7,
       });
     });
 
