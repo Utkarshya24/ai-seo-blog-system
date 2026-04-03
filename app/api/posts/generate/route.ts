@@ -7,6 +7,23 @@ import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 import { auditPostSeo } from '@/lib/seo/content-audit';
+import { fetchSemrushDomainOverview } from '@/lib/integrations/semrush';
+
+const SEMRUSH_API_KEY = process.env.SEMRUSH_API_KEY?.trim() || '';
+const SEMRUSH_DATABASE = process.env.SEMRUSH_DATABASE?.trim() || 'us';
+
+function resolveDomainForSemrush(input: string | null | undefined): string | null {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  try {
+    const parsed = raw.startsWith('http://') || raw.startsWith('https://')
+      ? new URL(raw)
+      : new URL(`https://${raw}`);
+    return parsed.hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return raw.replace(/^www\./, '').toLowerCase();
+  }
+}
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -115,8 +132,27 @@ export async function POST(request: NextRequest) {
       include: {
         keyword: true,
         seoMetrics: true,
+        website: {
+          select: {
+            domain: true,
+            baseUrl: true,
+          },
+        },
       },
     });
+
+    const semrushDomain = resolveDomainForSemrush(post.website?.domain || post.website?.baseUrl);
+    const semrushOverview =
+      SEMRUSH_API_KEY && semrushDomain
+        ? await fetchSemrushDomainOverview({
+            domain: semrushDomain,
+            apiKey: SEMRUSH_API_KEY,
+            database: SEMRUSH_DATABASE,
+          }).catch((error) => {
+            console.warn('[SEMrush] POST audit fetch failed:', error);
+            return null;
+          })
+        : null;
 
     return NextResponse.json({
       success: true,
@@ -128,7 +164,11 @@ export async function POST(request: NextRequest) {
           metaDescription: post.metaDescription,
           content: post.content,
           keyword: post.keyword?.keyword || post.title,
-          metrics: post.seoMetrics,
+          metrics: {
+            ...post.seoMetrics,
+            semrushOrganicKeywords: semrushOverview?.organicKeywords || 0,
+            semrushOrganicTraffic: semrushOverview?.organicTraffic || 0,
+          },
         }),
       },
     });
@@ -163,6 +203,12 @@ export async function GET(request: NextRequest) {
         include: {
           keyword: true,
           seoMetrics: true,
+          website: {
+            select: {
+              domain: true,
+              baseUrl: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -170,6 +216,19 @@ export async function GET(request: NextRequest) {
       }),
       prisma.post.count({ where }),
     ]);
+
+    const firstPostDomain = resolveDomainForSemrush(posts[0]?.website?.domain || posts[0]?.website?.baseUrl);
+    const semrushOverview =
+      SEMRUSH_API_KEY && firstPostDomain
+        ? await fetchSemrushDomainOverview({
+            domain: firstPostDomain,
+            apiKey: SEMRUSH_API_KEY,
+            database: SEMRUSH_DATABASE,
+          }).catch((error) => {
+            console.warn('[SEMrush] GET audit fetch failed:', error);
+            return null;
+          })
+        : null;
 
     return NextResponse.json({
       posts: posts.map((post) => ({
@@ -180,7 +239,11 @@ export async function GET(request: NextRequest) {
           metaDescription: post.metaDescription,
           content: post.content,
           keyword: post.keyword?.keyword || post.title,
-          metrics: post.seoMetrics,
+          metrics: {
+            ...post.seoMetrics,
+            semrushOrganicKeywords: semrushOverview?.organicKeywords || 0,
+            semrushOrganicTraffic: semrushOverview?.organicTraffic || 0,
+          },
         }),
       })),
       pagination: getPaginationMeta({ page, limit, total }),

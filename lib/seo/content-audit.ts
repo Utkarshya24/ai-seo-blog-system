@@ -12,6 +12,8 @@ export interface SeoAuditResult {
     clicks: number;
     ctr: number;
     position: number;
+    semrushOrganicKeywords: number;
+    semrushOrganicTraffic: number;
   };
   checks: {
     titleLength: boolean;
@@ -28,6 +30,7 @@ export interface SeoAuditResult {
     readability: boolean;
     ctrHealthy: boolean;
     positionHealthy: boolean;
+    semrushVisibility: boolean;
   };
 }
 
@@ -55,6 +58,8 @@ export function auditPostSeo(params: {
     ctr?: number;
     position?: number;
     ranking?: number;
+    semrushOrganicKeywords?: number;
+    semrushOrganicTraffic?: number;
   } | null;
 }): SeoAuditResult {
   const { title, metaDescription, content, keyword, metrics } = params;
@@ -85,6 +90,9 @@ export function auditPostSeo(params: {
   const ctr = Number(metrics?.ctr ?? derivedCtr);
   const position = Number(metrics?.position || metrics?.ranking || 0);
   const hasPerformanceData = impressions > 0;
+  const semrushOrganicKeywords = Number(metrics?.semrushOrganicKeywords || 0);
+  const semrushOrganicTraffic = Number(metrics?.semrushOrganicTraffic || 0);
+  const hasSemrushData = semrushOrganicKeywords > 0 || semrushOrganicTraffic > 0;
 
   const checks = {
     titleLength: title.trim().length >= 40 && title.trim().length <= 60,
@@ -101,6 +109,7 @@ export function auditPostSeo(params: {
     readability: readabilityScore >= 45,
     ctrHealthy: !hasPerformanceData || ctr >= 2.0,
     positionHealthy: !hasPerformanceData || (position > 0 && position <= 20),
+    semrushVisibility: !hasSemrushData || semrushOrganicKeywords >= 50 || semrushOrganicTraffic >= 100,
   };
 
   const onPageScore =
@@ -118,8 +127,9 @@ export function auditPostSeo(params: {
   const performanceScore = hasPerformanceData
     ? (checks.ctrHealthy ? 8 : 0) + (checks.positionHealthy ? 8 : 0)
     : 8; // neutral baseline when performance data is unavailable
+  const semrushScore = hasSemrushData ? (checks.semrushVisibility ? 10 : 4) : 6;
 
-  const rawScore = onPageScore + technicalScore + readabilityBucketScore + performanceScore;
+  const rawScore = onPageScore + technicalScore + readabilityBucketScore + performanceScore + semrushScore;
 
   const suggestions: string[] = [];
   if (!checks.titleLength) suggestions.push('Keep SEO title between 40 and 60 characters.');
@@ -136,6 +146,12 @@ export function auditPostSeo(params: {
   if (!checks.readability) suggestions.push('Improve readability by shortening long sentences and simplifying wording.');
   if (hasPerformanceData && !checks.ctrHealthy) suggestions.push('Improve CTR with stronger title hooks and clearer meta benefits.');
   if (hasPerformanceData && !checks.positionHealthy) suggestions.push('Strengthen relevance and internal linking to improve average position.');
+  if (hasSemrushData && !checks.semrushVisibility) {
+    suggestions.push('SEMrush indicates low visibility. Target stronger topics and improve backlink authority.');
+  }
+  if (!hasSemrushData) {
+    suggestions.push('Connect SEMrush API key to enrich score with external visibility benchmarks.');
+  }
 
   return {
     score: Math.max(0, Math.min(100, Math.round(rawScore))),
@@ -151,6 +167,8 @@ export function auditPostSeo(params: {
       clicks,
       ctr,
       position,
+      semrushOrganicKeywords,
+      semrushOrganicTraffic,
     },
     checks,
   };
