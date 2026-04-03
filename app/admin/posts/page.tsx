@@ -9,6 +9,12 @@ import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -48,6 +54,21 @@ interface KeywordOption {
   id: string;
   keyword: string;
   status: string;
+}
+
+function isBusy(postId: string, params: {
+  pushingExternalId: string | null;
+  linkingPostId: string | null;
+  optimizingSeoPostId: string | null;
+  loadingEditor: boolean;
+  editingPostId: string | null;
+}) {
+  return (
+    params.pushingExternalId === postId ||
+    params.linkingPostId === postId ||
+    params.optimizingSeoPostId === postId ||
+    (params.loadingEditor && params.editingPostId === postId)
+  );
 }
 
 export default function PostsManager() {
@@ -494,14 +515,46 @@ export default function PostsManager() {
                       <p className="text-xs text-muted-foreground">
                         SEO: <span className="text-foreground">{post.seoAudit?.score ?? 0}/100</span> | Read: <span className="text-foreground">{post.readingTime}m</span>
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openEditor(post.id)}>Edit</Button>
-                        <Button size="sm" variant="outline" onClick={() => updateSeo(post.id)} disabled={optimizingSeoPostId === post.id}>
-                          {optimizingSeoPostId === post.id ? 'Updating...' : 'Update SEO'}
-                        </Button>
-                        {post.status === 'draft' ? (
-                          <Button size="sm" variant="outline" onClick={() => publishPost(post.id)}>Publish</Button>
-                        ) : null}
+                      <div className="mt-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="outline">Actions</Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-48">
+                            <DropdownMenuItem
+                              disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                              onSelect={() => openEditor(post.id)}
+                            >
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                              onSelect={() => updateSeo(post.id)}
+                            >
+                              {optimizingSeoPostId === post.id ? 'Updating SEO...' : 'Update SEO'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                              onSelect={() => autoInsertLinks(post.id)}
+                            >
+                              {linkingPostId === post.id ? 'Linking...' : 'Auto Internal Links'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                              onSelect={() => pushPostExternally(post.id)}
+                            >
+                              {pushingExternalId === post.id ? 'Pushing...' : 'Push External'}
+                            </DropdownMenuItem>
+                            {post.status === 'draft' ? (
+                              <DropdownMenuItem
+                                disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                onSelect={() => publishPost(post.id)}
+                              >
+                                Publish
+                              </DropdownMenuItem>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   ))}
@@ -554,51 +607,45 @@ export default function PostsManager() {
                           {new Date(post.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            {post.status === 'draft' ? (
-                              <Button size="sm" variant="outline" onClick={() => publishPost(post.id)}>
-                                Publish
-                              </Button>
-                            ) : null}
-                            <Button
-                              size="sm"
-                              onClick={() => pushPostExternally(post.id)}
-                              disabled={pushingExternalId === post.id}
-                            >
-                              {pushingExternalId === post.id ? (
-                                <>
-                                  <Spinner className="mr-2 h-3.5 w-3.5" />
-                                  Pushing
-                                </>
-                              ) : (
-                                'Push External'
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => autoInsertLinks(post.id)}
-                              disabled={linkingPostId === post.id}
-                            >
-                              {linkingPostId === post.id ? 'Linking...' : 'Auto Internal Links'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => updateSeo(post.id)}
-                              disabled={optimizingSeoPostId === post.id}
-                            >
-                              {optimizingSeoPostId === post.id ? 'Updating SEO...' : 'Update SEO'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openEditor(post.id)}
-                              disabled={loadingEditor && editingPostId === post.id}
-                            >
-                              Edit
-                            </Button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="outline">Actions</Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52">
+                              <DropdownMenuItem
+                                disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                onSelect={() => openEditor(post.id)}
+                              >
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                onSelect={() => updateSeo(post.id)}
+                              >
+                                {optimizingSeoPostId === post.id ? 'Updating SEO...' : 'Update SEO'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                onSelect={() => autoInsertLinks(post.id)}
+                              >
+                                {linkingPostId === post.id ? 'Linking...' : 'Auto Internal Links'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                onSelect={() => pushPostExternally(post.id)}
+                              >
+                                {pushingExternalId === post.id ? 'Pushing...' : 'Push External'}
+                              </DropdownMenuItem>
+                              {post.status === 'draft' ? (
+                                <DropdownMenuItem
+                                  disabled={isBusy(post.id, { pushingExternalId, linkingPostId, optimizingSeoPostId, loadingEditor, editingPostId })}
+                                  onSelect={() => publishPost(post.id)}
+                                >
+                                  Publish
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
