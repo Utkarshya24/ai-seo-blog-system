@@ -508,7 +508,7 @@ export default function PostsManager() {
                 </div>
 
                 <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 lg:block">
-                <Table className="min-w-[1180px]">
+                <Table className="min-w-[1180px] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
@@ -524,16 +524,16 @@ export default function PostsManager() {
                   <TableBody>
                     {posts.map((post) => (
                       <TableRow key={post.id}>
-                        <TableCell className="max-w-[260px] font-medium whitespace-normal break-words">
+                        <TableCell className="max-w-[260px] align-top font-medium whitespace-normal break-words">
                           <Link href={`/blog/${post.slug}`} className="line-clamp-2 text-primary hover:underline">
                             {post.title}
                           </Link>
                         </TableCell>
-                        <TableCell className="max-w-[180px] whitespace-normal break-words">{post.keyword?.keyword}</TableCell>
-                        <TableCell>
+                        <TableCell className="max-w-[180px] align-top whitespace-normal break-words">{post.keyword?.keyword}</TableCell>
+                        <TableCell className="align-top">
                           <StatusBadge label={post.status} tonesByLabel={postStatusTones} />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <span
                             className={
                               post.seoAudit && post.seoAudit.score >= 80
@@ -546,7 +546,7 @@ export default function PostsManager() {
                             {post.seoAudit?.score ?? 0}/100
                           </span>
                         </TableCell>
-                        <TableCell className="hidden max-w-[280px] text-sm text-muted-foreground lg:table-cell">
+                        <TableCell className="hidden max-w-[280px] align-top whitespace-normal break-words text-sm text-muted-foreground lg:table-cell">
                           {post.seoAudit?.suggestions?.slice(0, 2).join(' ') || 'Looks well optimized.'}
                         </TableCell>
                         <TableCell className="hidden xl:table-cell">{post.readingTime} min</TableCell>
