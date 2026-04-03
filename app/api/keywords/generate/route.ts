@@ -303,7 +303,70 @@ export async function GET(request: NextRequest) {
       prisma.keyword.count({ where }),
     ]);
 
-    const formatted = keywords.map(formatKeywordForResponse);
+    const gscStartDate = dateNDaysAgo(30);
+    const gscEndDate = dateNDaysAgo(1);
+    let gscVolumeMap = new Map<string, number>();
+
+    if (websiteId && keywords.length > 0) {
+      try {
+        const website = await prisma.website.findUnique({
+          where: { id: websiteId },
+          select: {
+            gscProperty: true,
+            gscRefreshTokenEnc: true,
+          },
+        });
+
+        const siteUrl = website?.gscProperty?.trim() || process.env.GSC_SITE_URL?.trim();
+        let accessToken = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim();
+        if (!accessToken && website?.gscRefreshTokenEnc) {
+          const refreshToken = decryptText(website.gscRefreshTokenEnc);
+          accessToken = await refreshAccessToken(refreshToken);
+        }
+
+        if (siteUrl && accessToken) {
+          gscVolumeMap = await fetchKeywordSearchVolumes({
+            siteUrl,
+            startDate: gscStartDate,
+            endDate: gscEndDate,
+            accessToken,
+            keywords: keywords.map((row) => row.keyword),
+          });
+        }
+      } catch (gscError) {
+        // Non-fatal: keep keyword listing working even if GSC fetch fails.
+        console.warn('[API] GSC keyword volume overlay skipped:', gscError);
+      }
+    }
+
+    if (gscVolumeMap.size > 0) {
+      await Promise.all(
+        keywords.map(async (row) => {
+          const normalized = row.keyword.trim().toLowerCase();
+          const gscVolume = gscVolumeMap.get(normalized);
+          if (!Number.isFinite(gscVolume)) return;
+          if (row.searchVolume === Number(gscVolume)) return;
+          await prisma.keyword.update({
+            where: { id: row.id },
+            data: { searchVolume: Number(gscVolume) },
+          });
+        })
+      );
+    }
+
+    const formatted = keywords.map((row) => {
+      const normalized = row.keyword.trim().toLowerCase();
+      const gscVolume = gscVolumeMap.get(normalized);
+      const hasGscVolume = Number.isFinite(gscVolume);
+      return formatKeywordForResponse({
+        ...row,
+        searchVolume: hasGscVolume ? Number(gscVolume) : row.searchVolume,
+        searchVolumeSource: hasGscVolume ? 'gsc' : 'estimated',
+        searchVolumeStartDate: hasGscVolume ? gscStartDate : undefined,
+        searchVolumeEndDate: hasGscVolume ? gscEndDate : undefined,
+      });
+    });
+
     formatted.sort((a: { priorityScore: number; }, b: { priorityScore: number; }) => b.priorityScore - a.priorityScore);
     return NextResponse.json({
       keywords: formatted,
