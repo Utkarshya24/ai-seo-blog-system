@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  Activity,
   AlertTriangle,
-  Clock3,
   FlaskConical,
+  Link2,
   MousePointerClick,
   Target,
   TrendingUp,
@@ -19,7 +18,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { tenantFetch } from '@/lib/client/tenant';
+import { getStoredWebsiteId, tenantFetch } from '@/lib/client/tenant';
 import {
   opportunitySeverityTones,
   serpExperimentStatusTones,
@@ -31,8 +30,9 @@ interface Metrics {
   clicks: number;
   ctr?: number;
   source?: string;
-  avgTimeOnPage: number;
-  bounceRate: number;
+  position?: number;
+  ranking?: number;
+  backlinks?: number;
   updatedAt: string;
 }
 
@@ -75,6 +75,20 @@ interface SerpExperiment {
   post?: { title: string; slug: string };
 }
 
+interface GscSyncResult {
+  siteUrl: string;
+  range?: { startDate: string; endDate: string };
+  totalRows?: number;
+  matchedPosts?: number;
+  updatedPosts?: number;
+}
+
+function dateNDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function MetricsDashboard() {
   const [metrics, setMetrics] = useState<Metrics[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -89,9 +103,23 @@ export default function MetricsDashboard() {
   >({});
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [gscSecret, setGscSecret] = useState('');
+  const [gscSiteUrl, setGscSiteUrl] = useState('');
+  const [gscStartDate, setGscStartDate] = useState(() => dateNDaysAgo(7));
+  const [gscEndDate, setGscEndDate] = useState(() => dateNDaysAgo(1));
+  const [gscRowLimit, setGscRowLimit] = useState('1000');
+  const [syncingGsc, setSyncingGsc] = useState(false);
+  const [gscError, setGscError] = useState('');
+  const [gscNotice, setGscNotice] = useState('');
+  const [gscResult, setGscResult] = useState<GscSyncResult | null>(null);
+  const [activeWebsiteId, setActiveWebsiteId] = useState('');
 
   useEffect(() => {
     void fetchData();
+  }, []);
+
+  useEffect(() => {
+    setActiveWebsiteId(getStoredWebsiteId() || '');
   }, []);
 
   async function fetchData() {
@@ -253,21 +281,60 @@ export default function MetricsDashboard() {
     }
   }
 
+  async function syncGscMetrics(e: React.FormEvent) {
+    e.preventDefault();
+    setSyncingGsc(true);
+    setGscError('');
+    setGscNotice('');
+    setGscResult(null);
+
+    try {
+      const res = await tenantFetch('/api/metrics/gsc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          secret: gscSecret.trim(),
+          siteUrl: gscSiteUrl.trim() || undefined,
+          startDate: gscStartDate || undefined,
+          endDate: gscEndDate || undefined,
+          rowLimit: Math.min(1000, Math.max(1, Number(gscRowLimit || 1000))),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setGscError(data.error || 'Failed to sync GSC metrics.');
+        return;
+      }
+
+      setGscResult(data as GscSyncResult);
+      setGscNotice('GSC sync completed. Metrics table refreshed.');
+      await fetchData();
+    } catch (error) {
+      console.error('[Metrics] syncGscMetrics error:', error);
+      setGscError('GSC sync failed due to network/server issue.');
+    } finally {
+      setSyncingGsc(false);
+    }
+  }
+
   const getPostTitle = (postId: string) => posts.find((post) => post.id === postId)?.title || 'Unknown Post';
   const getPostSlug = (postId: string) => posts.find((post) => post.id === postId)?.slug || '';
 
   const totalViews = metrics.reduce((sum, metric) => sum + metric.views, 0);
   const totalClicks = metrics.reduce((sum, metric) => sum + metric.clicks, 0);
-  const avgBounceRate =
-    metrics.length > 0
-      ? (metrics.reduce((sum, metric) => sum + metric.bounceRate, 0) / metrics.length).toFixed(1)
-      : '0';
-  const avgTimeOnPage =
-    metrics.length > 0
-      ? (metrics.reduce((sum, metric) => sum + metric.avgTimeOnPage, 0) / metrics.length).toFixed(1)
-      : '0';
   const overallCtr = totalViews > 0 ? ((totalClicks / totalViews) * 100).toFixed(1) : '0.0';
-  const bounceRateNumber = Number(avgBounceRate);
+  const resolvedPositions = metrics
+    .map((metric) => (metric.position && metric.position > 0 ? metric.position : metric.ranking || 0))
+    .filter((value) => value > 0);
+  const avgPosition =
+    resolvedPositions.length > 0
+      ? (resolvedPositions.reduce((sum, value) => sum + value, 0) / resolvedPositions.length).toFixed(1)
+      : '-';
+  const avgBacklinks =
+    metrics.length > 0
+      ? (metrics.reduce((sum, metric) => sum + (metric.backlinks || 0), 0) / metrics.length).toFixed(1)
+      : '-';
 
   const totalMissedClicks = opportunities.reduce((sum, item) => sum + item.missedClicks, 0);
   const highSeverityCount = opportunities.filter((item) => item.severity === 'high').length;
@@ -300,33 +367,128 @@ export default function MetricsDashboard() {
           trend={loading ? undefined : { value: `${overallCtr}% overall CTR`, direction: 'up' }}
         />
         <KpiCard
-          label="Avg Time On Page"
-          value={loading ? '-' : `${avgTimeOnPage}s`}
-          helper="Audience attention span"
-          icon={Clock3}
+          label="Avg Position"
+          value={loading ? '-' : avgPosition}
+          helper="Mean SERP rank position"
+          icon={Target}
           variant="compact"
-          trend={loading ? undefined : { value: 'Session depth signal', direction: 'neutral' }}
+          trend={loading ? undefined : { value: 'Lower is better', direction: 'up' }}
         />
         <KpiCard
-          label="Avg Bounce Rate"
-          value={loading ? '-' : `${avgBounceRate}%`}
-          helper="Exit probability signal"
-          icon={Activity}
-          variant="progress"
-          progress={loading ? undefined : bounceRateNumber}
-          progressTone="warning"
-          trend={
-            loading
-              ? undefined
-              : {
-                  value: bounceRateNumber <= 45 ? 'Healthy range' : 'Needs reduction',
-                  direction: bounceRateNumber <= 45 ? 'up' : 'down',
-                }
-          }
+          label="Avg Backlinks"
+          value={loading ? '-' : avgBacklinks}
+          helper="Link equity per tracked post"
+          icon={Link2}
+          variant="compact"
+          trend={loading ? undefined : { value: 'Authority signal', direction: 'neutral' }}
         />
       </div>
 
       <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-12">
+        <Card className="xl:col-span-12">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-primary" />
+              Manual GSC Sync
+            </CardTitle>
+            <CardDescription>
+              Trigger Google Search Console sync from UI. Use active website context from header.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={syncGscMetrics} className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Cron Secret</label>
+                <Input
+                  type="password"
+                  value={gscSecret}
+                  onChange={(e) => setGscSecret(e.target.value)}
+                  placeholder="CRON_SECRET"
+                  disabled={syncingGsc}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Site URL (optional)</label>
+                <Input
+                  value={gscSiteUrl}
+                  onChange={(e) => setGscSiteUrl(e.target.value)}
+                  placeholder="https://dcdeploy.com/ or sc-domain:dcdeploy.com"
+                  disabled={syncingGsc}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Start Date</label>
+                <Input
+                  type="date"
+                  value={gscStartDate}
+                  onChange={(e) => setGscStartDate(e.target.value)}
+                  disabled={syncingGsc}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">End Date</label>
+                <Input
+                  type="date"
+                  value={gscEndDate}
+                  onChange={(e) => setGscEndDate(e.target.value)}
+                  disabled={syncingGsc}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Row Limit</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  value={gscRowLimit}
+                  onChange={(e) => setGscRowLimit(e.target.value)}
+                  disabled={syncingGsc}
+                />
+              </div>
+
+              <div className="md:col-span-2 xl:col-span-5 flex flex-wrap items-center gap-2">
+                <Button type="submit" disabled={syncingGsc || !gscSecret.trim()}>
+                  {syncingGsc ? 'Syncing...' : 'Run GSC Sync'}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Active website ID: <span className="font-mono">{activeWebsiteId || 'Not selected'}</span>
+                </p>
+              </div>
+            </form>
+
+            {gscError ? (
+              <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {gscError}
+              </p>
+            ) : null}
+            {gscNotice ? (
+              <p className="mt-3 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+                {gscNotice}
+              </p>
+            ) : null}
+            {gscResult ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                  <p className="text-xs text-muted-foreground">Site URL</p>
+                  <p className="line-clamp-1 text-sm font-medium">{gscResult.siteUrl}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                  <p className="text-xs text-muted-foreground">Rows Fetched</p>
+                  <p className="text-lg font-semibold">{gscResult.totalRows ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                  <p className="text-xs text-muted-foreground">Matched Posts</p>
+                  <p className="text-lg font-semibold">{gscResult.matchedPosts ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                  <p className="text-xs text-muted-foreground">Updated Posts</p>
+                  <p className="text-lg font-semibold text-emerald-600">{gscResult.updatedPosts ?? 0}</p>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
         <Card className="xl:col-span-7">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -411,8 +573,8 @@ export default function MetricsDashboard() {
                     <TableHead>Clicks</TableHead>
                     <TableHead>CTR</TableHead>
                     <TableHead className="hidden md:table-cell">Source</TableHead>
-                    <TableHead className="hidden md:table-cell">Avg Time</TableHead>
-                    <TableHead className="hidden lg:table-cell">Bounce Rate</TableHead>
+                    <TableHead className="hidden md:table-cell">Position</TableHead>
+                    <TableHead className="hidden lg:table-cell">Backlinks</TableHead>
                     <TableHead className="hidden lg:table-cell">Updated</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -425,6 +587,12 @@ export default function MetricsDashboard() {
                           ? ((metric.clicks / metric.views) * 100).toFixed(1)
                           : '0';
                     const slug = getPostSlug(metric.postId);
+                    const resolvedPosition =
+                      metric.position && metric.position > 0
+                        ? metric.position
+                        : metric.ranking && metric.ranking > 0
+                          ? metric.ranking
+                          : null;
 
                     return (
                       <TableRow key={metric.postId}>
@@ -441,8 +609,8 @@ export default function MetricsDashboard() {
                         <TableCell>{metric.clicks.toLocaleString()}</TableCell>
                         <TableCell>{ctr}%</TableCell>
                         <TableCell className="hidden uppercase md:table-cell">{metric.source || 'manual'}</TableCell>
-                        <TableCell className="hidden md:table-cell">{metric.avgTimeOnPage.toFixed(1)}s</TableCell>
-                        <TableCell className="hidden lg:table-cell">{metric.bounceRate.toFixed(1)}%</TableCell>
+                        <TableCell className="hidden md:table-cell">{resolvedPosition ? resolvedPosition.toFixed(1) : '-'}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{metric.backlinks ?? 0}</TableCell>
                         <TableCell className="hidden text-muted-foreground lg:table-cell">
                           {new Date(metric.updatedAt).toLocaleDateString()}
                         </TableCell>

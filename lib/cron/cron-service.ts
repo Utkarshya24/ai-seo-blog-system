@@ -12,7 +12,7 @@ import { syncSearchConsoleMetrics } from '@/lib/integrations/google-search-conso
 import { estimateDifficulty, estimateIntent, estimateSearchVolume } from '@/lib/seo/keyword-metrics';
 import { getTrendingTechNews, refreshTrendingTechNews } from '@/lib/trends/tech-news';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'default-secret';
+const CRON_SECRET = process.env.CRON_SECRET?.trim() || '';
 const KEYWORDS_PER_NICHE = Number(process.env.KEYWORDS_PER_NICHE || 4);
 const COMPARISON_KEYWORDS_PER_NICHE = Number(process.env.COMPARISON_KEYWORDS_PER_NICHE || 2);
 const BLOG_GENERATION_BATCH_SIZE = Number(process.env.BLOG_GENERATION_BATCH_SIZE || 8);
@@ -58,10 +58,28 @@ export const dailyKeywordGenerationJob = {
   task: async () => {
     console.log('[CRON] Starting daily keyword generation job');
     try {
-      const niches = ['AI tools', 'machine learning', 'web development', 'productivity'];
+      const websites = await prisma.website.findMany({
+        where: {
+          isActive: true,
+          ...(DEFAULT_TENANT_ID && { tenantId: DEFAULT_TENANT_ID }),
+          ...(DEFAULT_WEBSITE_ID && { id: DEFAULT_WEBSITE_ID }),
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          niche: true,
+        },
+      });
+
+      if (websites.length === 0) {
+        console.log('[CRON] No active websites found for keyword generation');
+        return;
+      }
+
       const trendHints = (await getTrendingTechNews({ limit: 20 })).trendingKeywords;
 
-      for (const niche of niches) {
+      for (const website of websites) {
+        const niche = website.niche?.trim() || 'general';
         const [keywords, comparisonKeywords] = await Promise.all([
           generateKeywords({
             niche,
@@ -82,7 +100,7 @@ export const dailyKeywordGenerationJob = {
           const difficulty = estimateDifficulty(keyword);
           const searchVolume = estimateSearchVolume(keyword, intent);
           const existing = await prisma.keyword.findFirst({
-            where: { keyword, websiteId: DEFAULT_WEBSITE_ID },
+            where: { keyword, websiteId: website.id },
           });
 
           if (existing) {
@@ -90,8 +108,8 @@ export const dailyKeywordGenerationJob = {
               where: { id: existing.id },
               data: {
                 niche,
-                tenantId: DEFAULT_TENANT_ID,
-                websiteId: DEFAULT_WEBSITE_ID,
+                tenantId: website.tenantId,
+                websiteId: website.id,
                 difficulty,
                 searchVolume,
                 updatedAt: new Date(),
@@ -102,8 +120,8 @@ export const dailyKeywordGenerationJob = {
               data: {
                 keyword,
                 niche,
-                tenantId: DEFAULT_TENANT_ID,
-                websiteId: DEFAULT_WEBSITE_ID,
+                tenantId: website.tenantId,
+                websiteId: website.id,
                 difficulty,
                 searchVolume,
               },
@@ -111,7 +129,7 @@ export const dailyKeywordGenerationJob = {
           }
         }
 
-        console.log(`[CRON] Generated ${allKeywords.length} keywords for niche: ${niche}`);
+        console.log(`[CRON] Generated ${allKeywords.length} keywords for website ${website.id} niche: ${niche}`);
       }
 
       console.log('[CRON] Daily keyword generation job completed');
@@ -234,57 +252,7 @@ export const weeklyMetricsUpdateJob = {
         return;
       }
 
-      // Fallback for environments without GSC integration configured.
-      const posts = await prisma.post.findMany({
-        where: {
-          status: 'published',
-          ...(DEFAULT_TENANT_ID && { tenantId: DEFAULT_TENANT_ID }),
-          ...(DEFAULT_WEBSITE_ID && { websiteId: DEFAULT_WEBSITE_ID }),
-        },
-        take: BLOG_GENERATION_BATCH_SIZE,
-      });
-
-      for (const post of posts) {
-        const simulatedImpressions = Math.floor(Math.random() * 5000) + 200;
-        const simulatedClicks = Math.max(1, Math.floor(simulatedImpressions * (Math.random() * 0.09 + 0.01)));
-        const simulatedCtr = Number(((simulatedClicks / simulatedImpressions) * 100).toFixed(2));
-        const simulatedPosition = Number((Math.random() * 60 + 1).toFixed(2));
-        const simulatedBacklinks = Math.floor(Math.random() * 60);
-
-        await prisma.seoMetrics.upsert({
-          where: { postId: post.id },
-          update: {
-            tenantId: post.tenantId,
-            websiteId: post.websiteId,
-            traffic: simulatedImpressions,
-            impressions: simulatedImpressions,
-            clicks: simulatedClicks,
-            ctr: simulatedCtr,
-            backlinks: simulatedBacklinks,
-            ranking: Math.round(simulatedPosition),
-            position: simulatedPosition,
-            source: 'simulated',
-            fetchedAt: new Date(),
-            updatedAt: new Date(),
-          },
-          create: {
-            postId: post.id,
-            tenantId: post.tenantId,
-            websiteId: post.websiteId,
-            traffic: simulatedImpressions,
-            impressions: simulatedImpressions,
-            clicks: simulatedClicks,
-            ctr: simulatedCtr,
-            backlinks: simulatedBacklinks,
-            ranking: Math.round(simulatedPosition),
-            position: simulatedPosition,
-            source: 'simulated',
-          },
-        });
-      }
-
-      console.log(`[CRON] Updated fallback metrics for ${posts.length} posts`);
-      console.log('[CRON] Metrics update job completed');
+      console.log('[CRON] Skipping metrics update: GSC credentials are not configured.');
     } catch (error) {
       console.error('[CRON] Error in metrics update:', error);
     }
@@ -439,5 +407,5 @@ export function stopAllCronJobs() {
  * Validate cron job request
  */
 export function validateCronRequest(secret: string): boolean {
-  return secret === CRON_SECRET;
+  return Boolean(CRON_SECRET) && secret === CRON_SECRET;
 }

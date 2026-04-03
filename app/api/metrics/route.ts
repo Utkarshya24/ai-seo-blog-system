@@ -21,7 +21,7 @@ function formatMetricsForResponse(metrics: {
 }) {
   // Backward-compatible response contract used by current admin UI.
   const views = metrics.impressions > 0 ? metrics.impressions : metrics.traffic;
-  const clicks = metrics.clicks > 0 ? metrics.clicks : Math.round(metrics.traffic * 0.05);
+  const clicks = metrics.clicks;
   const ctr =
     metrics.ctr > 0
       ? metrics.ctr
@@ -34,8 +34,6 @@ function formatMetricsForResponse(metrics: {
     views,
     clicks,
     ctr,
-    avgTimeOnPage: Math.max(30, Math.round(360 - metrics.ranking * 2)),
-    bounceRate: Math.max(20, Math.min(80, 70 - metrics.backlinks * 0.1)),
     createdAt: metrics.fetchedAt,
   };
 }

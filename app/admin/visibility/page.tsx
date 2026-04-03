@@ -38,11 +38,11 @@ export default function VisibilityPage() {
   const [message, setMessage] = useState('');
 
   const [provider, setProvider] = useState('CHATGPT');
-  const [query, setQuery] = useState('best ai seo tools');
-  const [citedUrl, setCitedUrl] = useState('https://example.com/blog/seo-guide');
+  const [query, setQuery] = useState('');
+  const [citedUrl, setCitedUrl] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [rank, setRank] = useState('1');
-  const [snippet, setSnippet] = useState('Sample citation snippet from AI answer.');
+  const [rank, setRank] = useState('');
+  const [snippet, setSnippet] = useState('');
 
   useEffect(() => {
     void loadData();

@@ -6,8 +6,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 import { generateSocialPosts } from '@/lib/ai/openai-service';
 import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 
-function toSocialUrl(baseUrl: string | null | undefined, slug: string): string {
-  if (!baseUrl) return `https://example.com/blog/${slug}`;
+function toSocialUrl(baseUrl: string, slug: string): string {
   const clean = baseUrl.replace(/\/$/, '');
   return `${clean}/blog/${slug}`;
 }
@@ -88,7 +87,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Post does not belong to website' }, { status: 403 });
     }
 
-    const url = toSocialUrl(post.website?.baseUrl, post.slug);
+    const baseUrl = post.website?.baseUrl?.trim();
+    if (!baseUrl) {
+      return NextResponse.json(
+        { error: 'Website baseUrl is missing for this post. Configure website base URL first.' },
+        { status: 400 }
+      );
+    }
+
+    const url = toSocialUrl(baseUrl, post.slug);
     const generated = await generateSocialPosts({
       title: post.title,
       keyword: post.keyword?.keyword || post.title,
