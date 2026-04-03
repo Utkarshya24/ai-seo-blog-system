@@ -472,7 +472,7 @@ export default function KeywordsManager() {
                 </div>
 
                 <div className="w-full max-w-[calc(100vw-2rem)] overflow-x-auto rounded-lg border border-border/60 pb-2">
-                  <Table className="min-w-[1380px]">
+                  <Table className="min-w-[1380px] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="hidden lg:table-cell">ID</TableHead>
@@ -496,10 +496,10 @@ export default function KeywordsManager() {
                         <TableCell className="hidden max-w-[120px] truncate font-mono text-xs text-muted-foreground lg:table-cell">
                           {keyword.id}
                         </TableCell>
-                        <TableCell className="max-w-[320px] whitespace-nowrap font-medium">
+                        <TableCell className="max-w-[320px] whitespace-normal break-words align-top font-medium">
                           {keyword.keyword}
                         </TableCell>
-                        <TableCell className="max-w-[180px] whitespace-nowrap">{keyword.niche}</TableCell>
+                        <TableCell className="max-w-[180px] whitespace-normal break-words align-top">{keyword.niche}</TableCell>
                         <TableCell>
                           <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
                         </TableCell>
