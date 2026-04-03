@@ -9,6 +9,14 @@ import { KpiCard } from '@/components/admin-kpi-card';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
@@ -277,6 +285,14 @@ export default function PostsManager() {
     }
   }
 
+  function closeEditor() {
+    if (savingEditor) return;
+    setEditingPostId(null);
+    setEditTitle('');
+    setEditMetaDescription('');
+    setEditContent('');
+  }
+
   async function saveEditor() {
     if (!editingPostId) return;
     setError('');
@@ -452,57 +468,6 @@ export default function PostsManager() {
           </CardContent>
         </Card>
 
-        {editingPostId ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Edit Blog Post</CardTitle>
-              <CardDescription>Update title, meta description, and content for the selected post.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {loadingEditor ? (
-                <div className="flex justify-center py-6">
-                  <Spinner className="h-6 w-6" />
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Title</label>
-                    <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Meta Description</label>
-                    <Textarea
-                      value={editMetaDescription}
-                      onChange={(e) => setEditMetaDescription(e.target.value)}
-                      className="min-h-[90px]"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Content (Markdown)</label>
-                    <Textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      className="min-h-[280px]"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={saveEditor} disabled={savingEditor || !editTitle.trim() || !editMetaDescription.trim() || !editContent.trim()}>
-                      {savingEditor ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setEditingPostId(null)}
-                      disabled={savingEditor}
-                    >
-                      Close Editor
-                    </Button>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        ) : null}
-
         <Card>
           <CardHeader>
             <CardTitle>Posts Library</CardTitle>
@@ -618,6 +583,56 @@ export default function PostsManager() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(editingPostId)} onOpenChange={(open) => (open ? undefined : closeEditor())}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Blog Post</DialogTitle>
+            <DialogDescription>Update title, meta description, and markdown content.</DialogDescription>
+          </DialogHeader>
+
+          {loadingEditor ? (
+            <div className="flex justify-center py-10">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Title</label>
+                <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Meta Description</label>
+                <Textarea
+                  value={editMetaDescription}
+                  onChange={(e) => setEditMetaDescription(e.target.value)}
+                  className="min-h-[90px]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Content (Markdown)</label>
+                <Textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="min-h-[320px]"
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditor} disabled={savingEditor}>
+              Close
+            </Button>
+            <Button
+              onClick={saveEditor}
+              disabled={savingEditor || loadingEditor || !editTitle.trim() || !editMetaDescription.trim() || !editContent.trim()}
+            >
+              {savingEditor ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }
