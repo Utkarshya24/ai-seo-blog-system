@@ -9,6 +9,35 @@ const DEFAULT_WEBHOOK_URL = process.env.EXTERNAL_PUBLISH_WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.EXTERNAL_PUBLISH_WEBHOOK_SECRET;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
+function validateWebhookUrl(rawUrl: string): { ok: true; url: string } | { ok: false; error: string } {
+  const url = rawUrl.trim();
+  if (!url) {
+    return { ok: false, error: 'Webhook URL cannot be empty.' };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { ok: false, error: 'Webhook URL is not a valid URL.' };
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { ok: false, error: 'Webhook URL must use http or https.' };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host === 'example.com' || host.endsWith('.example.com')) {
+    return {
+      ok: false,
+      error:
+        'Webhook URL points to example.com placeholder. Set a real ingestion endpoint (for example: https://your-domain.com/api/content-ingest).',
+    };
+  }
+
+  return { ok: true, url: parsed.toString() };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authResult = await requireAdminAuth(request, AdminRole.EDITOR);
@@ -29,13 +58,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'postId is required' }, { status: 400 });
     }
 
-    const targetWebhook = webhookUrl || DEFAULT_WEBHOOK_URL;
-    if (!targetWebhook) {
+    const rawTargetWebhook = webhookUrl || DEFAULT_WEBHOOK_URL;
+    if (!rawTargetWebhook) {
       return NextResponse.json(
         { error: 'No webhook URL configured. Set EXTERNAL_PUBLISH_WEBHOOK_URL or pass webhookUrl in request.' },
         { status: 400 }
       );
     }
+    const webhookValidation = validateWebhookUrl(rawTargetWebhook);
+    if (!webhookValidation.ok) {
+      return NextResponse.json({ error: webhookValidation.error }, { status: 400 });
+    }
+    const targetWebhook = webhookValidation.url;
 
     let post = await prisma.post.findUnique({
       where: { id: postId },
