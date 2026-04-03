@@ -25,9 +25,30 @@ interface Keyword {
   searchVolumeSource?: 'gsc' | 'estimated';
   searchVolumeStartDate?: string;
   searchVolumeEndDate?: string;
+  trendStatus?: 'up' | 'stable' | 'down' | 'new' | 'insufficient';
+  trendGrowthPct?: number | null;
+  trendImpressionsLast7?: number;
+  trendImpressionsPrev7?: number;
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+function getTrendLabel(keyword: Keyword): string {
+  const status = keyword.trendStatus || 'insufficient';
+  if (status === 'up') return 'Trending Up';
+  if (status === 'down') return 'Declining';
+  if (status === 'stable') return 'Stable';
+  if (status === 'new') return 'New Spike';
+  return 'Insufficient';
+}
+
+function getTrendToneClass(keyword: Keyword): string {
+  const status = keyword.trendStatus || 'insufficient';
+  if (status === 'up' || status === 'new') return 'text-emerald-600';
+  if (status === 'down') return 'text-rose-600';
+  if (status === 'stable') return 'text-amber-600';
+  return 'text-muted-foreground';
 }
 
 export default function KeywordsManager() {
@@ -73,7 +94,7 @@ export default function KeywordsManager() {
 
       const data = await res.json();
       if (data.success) {
-        setKeywords((prev) => [...data.keywords, ...prev]);
+        await fetchKeywords();
         setNiche('');
       } else {
         setError(data.error || 'Keyword generation failed.');
@@ -254,6 +275,17 @@ export default function KeywordsManager() {
                           Difficulty: <span className="text-foreground">{keyword.difficulty}</span>
                         </p>
                         <p className="col-span-2 text-muted-foreground">
+                          Trend:{' '}
+                          <span className={getTrendToneClass(keyword)}>
+                            {getTrendLabel(keyword)}
+                            {typeof keyword.trendGrowthPct === 'number' ? ` (${keyword.trendGrowthPct >= 0 ? '+' : ''}${keyword.trendGrowthPct}%)` : ''}
+                          </span>
+                        </p>
+                        <p className="col-span-2 text-muted-foreground">
+                          7d Impr: <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span> | Prev 7d:{' '}
+                          <span className="text-foreground">{(keyword.trendImpressionsPrev7 || 0).toLocaleString()}</span>
+                        </p>
+                        <p className="col-span-2 text-muted-foreground">
                           Search Volume:{' '}
                           <span className="text-foreground">
                             {keyword.searchVolume} ({keyword.searchVolumeSource === 'gsc' ? 'GSC' : 'Estimated'})
@@ -275,6 +307,7 @@ export default function KeywordsManager() {
                       <TableHead>Intent</TableHead>
                       <TableHead>Priority</TableHead>
                       <TableHead>Difficulty</TableHead>
+                      <TableHead>Trend</TableHead>
                       <TableHead>Search Volume</TableHead>
                       <TableHead className="hidden md:table-cell">Generated</TableHead>
                       <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -297,6 +330,17 @@ export default function KeywordsManager() {
                         <TableCell className="capitalize">{keyword.intent || 'informational'}</TableCell>
                         <TableCell>{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
                         <TableCell>{keyword.difficulty}</TableCell>
+                        <TableCell>
+                          <div className={`text-sm font-medium ${getTrendToneClass(keyword)}`}>
+                            {getTrendLabel(keyword)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {typeof keyword.trendGrowthPct === 'number'
+                              ? `${keyword.trendGrowthPct >= 0 ? '+' : ''}${keyword.trendGrowthPct}%`
+                              : 'n/a'}
+                            {` | ${keyword.trendImpressionsLast7 || 0} vs ${keyword.trendImpressionsPrev7 || 0}`}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="font-medium">{keyword.searchVolume}</div>
                           <div className="text-xs text-muted-foreground">

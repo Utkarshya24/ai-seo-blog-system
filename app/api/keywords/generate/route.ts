@@ -81,6 +81,23 @@ function calculatePriorityScore(params: {
   return Math.max(0, Math.min(100, Number(score.toFixed(1))));
 }
 
+type KeywordTrendStatus = 'up' | 'stable' | 'down' | 'new' | 'insufficient';
+
+function computeTrendGrowthPct(last7: number, prev7: number): number | null {
+  if (prev7 <= 0) return null;
+  return Number((((last7 - prev7) / prev7) * 100).toFixed(1));
+}
+
+function classifyKeywordTrend(last7: number, prev7: number): KeywordTrendStatus {
+  if (prev7 < 20 && last7 >= 50) return 'new';
+  if (last7 === 0 && prev7 === 0) return 'insufficient';
+  if (prev7 <= 0) return last7 > 0 ? 'new' : 'insufficient';
+  const growth = ((last7 - prev7) / prev7) * 100;
+  if (growth >= 20) return 'up';
+  if (growth < -10) return 'down';
+  return 'stable';
+}
+
 function formatKeywordForResponse(keyword: {
   id: string;
   keyword: string;
@@ -93,6 +110,10 @@ function formatKeywordForResponse(keyword: {
   searchVolumeSource?: 'gsc' | 'estimated';
   searchVolumeStartDate?: string;
   searchVolumeEndDate?: string;
+  trendStatus?: KeywordTrendStatus;
+  trendGrowthPct?: number | null;
+  trendImpressionsLast7?: number;
+  trendImpressionsPrev7?: number;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
   const intent = estimateIntent(keyword.keyword);
@@ -110,6 +131,10 @@ function formatKeywordForResponse(keyword: {
     searchVolumeSource: keyword.searchVolumeSource || 'estimated',
     searchVolumeStartDate: keyword.searchVolumeStartDate,
     searchVolumeEndDate: keyword.searchVolumeEndDate,
+    trendStatus: keyword.trendStatus || 'insufficient',
+    trendGrowthPct: keyword.trendGrowthPct ?? null,
+    trendImpressionsLast7: keyword.trendImpressionsLast7 ?? 0,
+    trendImpressionsPrev7: keyword.trendImpressionsPrev7 ?? 0,
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -305,7 +330,13 @@ export async function GET(request: NextRequest) {
 
     const gscStartDate = dateNDaysAgo(30);
     const gscEndDate = dateNDaysAgo(1);
+    const trendLast7StartDate = dateNDaysAgo(7);
+    const trendLast7EndDate = dateNDaysAgo(1);
+    const trendPrev7StartDate = dateNDaysAgo(14);
+    const trendPrev7EndDate = dateNDaysAgo(8);
     let gscVolumeMap = new Map<string, number>();
+    let gscTrendLast7Map = new Map<string, number>();
+    let gscTrendPrev7Map = new Map<string, number>();
 
     if (websiteId && keywords.length > 0) {
       try {
@@ -325,13 +356,30 @@ export async function GET(request: NextRequest) {
         }
 
         if (siteUrl && accessToken) {
-          gscVolumeMap = await fetchKeywordSearchVolumes({
-            siteUrl,
-            startDate: gscStartDate,
-            endDate: gscEndDate,
-            accessToken,
-            keywords: keywords.map((row) => row.keyword),
-          });
+          const keywordList = keywords.map((row) => row.keyword);
+          [gscVolumeMap, gscTrendLast7Map, gscTrendPrev7Map] = await Promise.all([
+            fetchKeywordSearchVolumes({
+              siteUrl,
+              startDate: gscStartDate,
+              endDate: gscEndDate,
+              accessToken,
+              keywords: keywordList,
+            }),
+            fetchKeywordSearchVolumes({
+              siteUrl,
+              startDate: trendLast7StartDate,
+              endDate: trendLast7EndDate,
+              accessToken,
+              keywords: keywordList,
+            }),
+            fetchKeywordSearchVolumes({
+              siteUrl,
+              startDate: trendPrev7StartDate,
+              endDate: trendPrev7EndDate,
+              accessToken,
+              keywords: keywordList,
+            }),
+          ]);
         }
       } catch (gscError) {
         // Non-fatal: keep keyword listing working even if GSC fetch fails.
@@ -358,12 +406,20 @@ export async function GET(request: NextRequest) {
       const normalized = row.keyword.trim().toLowerCase();
       const gscVolume = gscVolumeMap.get(normalized);
       const hasGscVolume = Number.isFinite(gscVolume);
+      const last7 = gscTrendLast7Map.get(normalized) || 0;
+      const prev7 = gscTrendPrev7Map.get(normalized) || 0;
+      const trendStatus = classifyKeywordTrend(last7, prev7);
+      const trendGrowthPct = computeTrendGrowthPct(last7, prev7);
       return formatKeywordForResponse({
         ...row,
         searchVolume: hasGscVolume ? Number(gscVolume) : row.searchVolume,
         searchVolumeSource: hasGscVolume ? 'gsc' : 'estimated',
         searchVolumeStartDate: hasGscVolume ? gscStartDate : undefined,
         searchVolumeEndDate: hasGscVolume ? gscEndDate : undefined,
+        trendStatus,
+        trendGrowthPct,
+        trendImpressionsLast7: last7,
+        trendImpressionsPrev7: prev7,
       });
     });
 
