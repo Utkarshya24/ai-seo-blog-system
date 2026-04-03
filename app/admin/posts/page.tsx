@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { BookOpenCheck, Clock3, FileText, PenSquare } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
@@ -52,7 +51,6 @@ interface KeywordOption {
 }
 
 export default function PostsManager() {
-  const searchParams = useSearchParams();
   const [posts, setPosts] = useState<Post[]>([]);
   const [keywords, setKeywords] = useState<KeywordOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,11 +75,12 @@ export default function PostsManager() {
   }, []);
 
   useEffect(() => {
-    const postId = searchParams.get('postId');
+    if (typeof window === 'undefined') return;
+    const postId = new URLSearchParams(window.location.search).get('postId');
     if (postId) {
       void openEditor(postId);
     }
-  }, [searchParams]);
+  }, []);
 
   async function fetchData() {
     setLoading(true);
