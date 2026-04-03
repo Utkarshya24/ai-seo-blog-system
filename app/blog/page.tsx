@@ -88,30 +88,40 @@ export default async function BlogPage() {
         {posts.length > 0 ? (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {posts.map((post) => (
-              <Link
+              <article
                 key={post.id}
-                href={`/blog/${post.slug}`}
                 className="group flex h-full flex-col rounded-lg border border-border bg-card p-6 transition-all hover:border-primary hover:shadow-lg"
               >
-                <h2 className="mb-2 text-xl font-bold text-foreground group-hover:text-primary">
-                  {post.title}
-                </h2>
+                <Link href={`/blog/${post.slug}`}>
+                  <h2 className="mb-2 text-xl font-bold text-foreground group-hover:text-primary">
+                    {post.title}
+                  </h2>
 
-                <p className="mb-4 flex-grow text-sm text-muted-foreground line-clamp-2">
-                  {post.metaDescription}
-                </p>
+                  <p className="mb-4 flex-grow text-sm text-muted-foreground line-clamp-2">
+                    {post.metaDescription}
+                  </p>
 
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{calculateReadingTime(post.content)} min read</span>
-                  <span>{formatDate(new Date(post.publishedAt!))}</span>
-                </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{calculateReadingTime(post.content)} min read</span>
+                    <span>{formatDate(new Date(post.publishedAt!))}</span>
+                  </div>
+                </Link>
 
                 {post.keyword && (
                   <div className="mt-4 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                     {post.keyword.keyword}
                   </div>
                 )}
-              </Link>
+
+                <div className="mt-3">
+                  <Link
+                    href={`/admin/posts?postId=${post.id}`}
+                    className="inline-flex items-center rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-secondary"
+                  >
+                    Edit In Admin
+                  </Link>
+                </div>
+              </article>
             ))}
           </div>
         ) : (

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ReactNode } from 'react';
 import { BlogCopyActions } from '@/components/blog-copy-actions';
+import { auditPostSeo } from '@/lib/seo/content-audit';
 
 interface BlogPostPageProps {
   params: Promise<{
@@ -315,6 +316,31 @@ async function getPost(slug: string) {
   }
 }
 
+async function getRelatedPosts(params: { postId: string; keywordId?: string | null }) {
+  const { postId, keywordId } = params;
+  try {
+    return await prisma.post.findMany({
+      where: {
+        status: 'published',
+        id: { not: postId },
+        ...(keywordId ? { keywordId } : {}),
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        metaDescription: true,
+        publishedAt: true,
+      },
+      orderBy: { publishedAt: 'desc' },
+      take: 3,
+    });
+  } catch (error) {
+    console.error('[Blog] Error fetching related posts:', error);
+    return [];
+  }
+}
+
 export async function generateMetadata({ params }: BlogPostPageProps): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPost(slug);
@@ -354,6 +380,14 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
   if (!post) {
     notFound();
   }
+
+  const seoAudit = auditPostSeo({
+    title: post.title,
+    metaDescription: post.metaDescription,
+    content: post.content,
+    keyword: post.keyword?.keyword || post.title,
+  });
+  const relatedPosts = await getRelatedPosts({ postId: post.id, keywordId: post.keywordId });
 
   const toc = generateTableOfContents(post.content);
   const articleJsonLd = {
@@ -449,6 +483,14 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           </p>
 
           <BlogCopyActions markdown={post.content} />
+          <div className="mt-4">
+            <Link
+              href={`/admin/posts?postId=${post.id}`}
+              className="inline-flex items-center rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary"
+            >
+              Edit In Admin
+            </Link>
+          </div>
         </header>
 
         {/* Table of Contents */}
@@ -487,14 +529,48 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             </p>
           )}
         </footer>
+
+        {/* SEO Recommendations */}
+        <section className="mt-10 rounded-lg border border-border bg-secondary/30 p-5">
+          <h2 className="text-lg font-semibold text-foreground">SEO Recommendations</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Current SEO score: <span className="font-medium text-foreground">{seoAudit.score}/100</span>
+          </p>
+          {seoAudit.suggestions.length > 0 ? (
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+              {seoAudit.suggestions.slice(0, 5).map((suggestion) => (
+                <li key={suggestion}>{suggestion}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">This post looks well optimized.</p>
+          )}
+        </section>
       </article>
 
       {/* Related Posts */}
       <div className="border-t border-border bg-secondary/30">
         <div className="container mx-auto px-4 py-12">
           <h2 className="mb-8 text-2xl font-bold text-foreground">Related Posts</h2>
-          {/* Related posts component would go here */}
-          <p className="text-muted-foreground">More posts coming soon...</p>
+          {relatedPosts.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {relatedPosts.map((row) => (
+                <Link
+                  key={row.id}
+                  href={`/blog/${row.slug}`}
+                  className="rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary"
+                >
+                  <h3 className="line-clamp-2 text-base font-semibold text-foreground">{row.title}</h3>
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{row.metaDescription}</p>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {row.publishedAt ? formatDate(new Date(row.publishedAt)) : 'Draft'}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No related posts available yet.</p>
+          )}
         </div>
       </div>
     </main>
