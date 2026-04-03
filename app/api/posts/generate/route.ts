@@ -7,21 +7,21 @@ import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
 import { auditPostSeo } from '@/lib/seo/content-audit';
-import { fetchSemrushDomainOverview } from '@/lib/integrations/semrush';
+import { fetchPageSpeedMetrics } from '@/lib/integrations/pagespeed';
 
-const SEMRUSH_API_KEY = process.env.SEMRUSH_API_KEY?.trim() || '';
-const SEMRUSH_DATABASE = process.env.SEMRUSH_DATABASE?.trim() || 'us';
+const PAGESPEED_API_KEY = process.env.PAGESPEED_API_KEY?.trim() || '';
 
-function resolveDomainForSemrush(input: string | null | undefined): string | null {
-  const raw = String(input || '').trim();
-  if (!raw) return null;
+function resolvePostUrl(baseUrl: string | null | undefined, slug: string): string | null {
+  const raw = String(baseUrl || '').trim();
+  if (!raw || !slug.trim()) return null;
   try {
     const parsed = raw.startsWith('http://') || raw.startsWith('https://')
       ? new URL(raw)
       : new URL(`https://${raw}`);
-    return parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const cleanBase = parsed.toString().replace(/\/$/, '');
+    return `${cleanBase}/blog/${slug}`;
   } catch {
-    return raw.replace(/^www\./, '').toLowerCase();
+    return null;
   }
 }
 
@@ -141,16 +141,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const semrushDomain = resolveDomainForSemrush(post.website?.domain || post.website?.baseUrl);
-    const semrushOverview =
-      SEMRUSH_API_KEY && semrushDomain
-        ? await fetchSemrushDomainOverview({
-            domain: semrushDomain,
-            apiKey: SEMRUSH_API_KEY,
-            database: SEMRUSH_DATABASE,
-          }).catch((error) => {
-            console.warn('[SEMrush] POST audit fetch failed:', error);
-            return null;
+    const postUrl = resolvePostUrl(post.website?.baseUrl || post.website?.domain, post.slug);
+    const pageSpeed =
+      postUrl
+        ? await fetchPageSpeedMetrics({
+            url: postUrl,
+            strategy: 'mobile',
+            apiKey: PAGESPEED_API_KEY,
           })
         : null;
 
@@ -166,8 +163,7 @@ export async function POST(request: NextRequest) {
           keyword: post.keyword?.keyword || post.title,
           metrics: {
             ...post.seoMetrics,
-            semrushOrganicKeywords: semrushOverview?.organicKeywords || 0,
-            semrushOrganicTraffic: semrushOverview?.organicTraffic || 0,
+            pageSpeedPerformanceScore: pageSpeed?.performanceScore || 0,
           },
         }),
       },
@@ -217,18 +213,21 @@ export async function GET(request: NextRequest) {
       prisma.post.count({ where }),
     ]);
 
-    const firstPostDomain = resolveDomainForSemrush(posts[0]?.website?.domain || posts[0]?.website?.baseUrl);
-    const semrushOverview =
-      SEMRUSH_API_KEY && firstPostDomain
-        ? await fetchSemrushDomainOverview({
-            domain: firstPostDomain,
-            apiKey: SEMRUSH_API_KEY,
-            database: SEMRUSH_DATABASE,
-          }).catch((error) => {
-            console.warn('[SEMrush] GET audit fetch failed:', error);
-            return null;
-          })
-        : null;
+    const pageSpeedMap = new Map<string, number>();
+    await Promise.all(
+      posts.map(async (post) => {
+        const postUrl = resolvePostUrl(post.website?.baseUrl || post.website?.domain, post.slug);
+        if (!postUrl) return;
+        const metrics = await fetchPageSpeedMetrics({
+          url: postUrl,
+          strategy: 'mobile',
+          apiKey: PAGESPEED_API_KEY,
+        });
+        if (metrics?.performanceScore) {
+          pageSpeedMap.set(post.id, metrics.performanceScore);
+        }
+      })
+    );
 
     return NextResponse.json({
       posts: posts.map((post) => ({
@@ -241,8 +240,7 @@ export async function GET(request: NextRequest) {
           keyword: post.keyword?.keyword || post.title,
           metrics: {
             ...post.seoMetrics,
-            semrushOrganicKeywords: semrushOverview?.organicKeywords || 0,
-            semrushOrganicTraffic: semrushOverview?.organicTraffic || 0,
+            pageSpeedPerformanceScore: pageSpeedMap.get(post.id) || 0,
           },
         }),
       })),
