@@ -4,6 +4,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --font-manrope: 'Avenir Next';
+  --font-jetbrains-mono: 'SFMono-Regular';
   --background: oklch(0.985 0.01 230);
   --foreground: oklch(0.24 0.03 245);
   --card: oklch(0.995 0.008 225);

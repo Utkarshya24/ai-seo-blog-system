@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, CircleDashed, Search, Target } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
@@ -99,21 +99,36 @@ export default function KeywordsManager() {
   });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [filterQ, setFilterQ] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterNiche, setFilterNiche] = useState('');
+  const [filterMinDifficulty, setFilterMinDifficulty] = useState('');
+  const [filterMaxDifficulty, setFilterMaxDifficulty] = useState('');
+  const [appliedFilterQ, setAppliedFilterQ] = useState('');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState('');
+  const [appliedFilterNiche, setAppliedFilterNiche] = useState('');
+  const [appliedFilterMinDifficulty, setAppliedFilterMinDifficulty] = useState('');
+  const [appliedFilterMaxDifficulty, setAppliedFilterMaxDifficulty] = useState('');
   const [niche, setNiche] = useState('');
   const [count, setCount] = useState(5);
   const [mode, setMode] = useState<'mixed' | 'standard' | 'comparison'>('mixed');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    void fetchKeywords(page);
-  }, [page]);
-
-  async function fetchKeywords(nextPage: number) {
+  const fetchKeywords = useCallback(async (nextPage: number) => {
     setLoading(true);
     setError('');
     try {
-      const res = await tenantFetch(`/api/keywords/generate?page=${nextPage}&limit=20`);
+      const params = new URLSearchParams();
+      params.set('page', String(nextPage));
+      params.set('limit', '20');
+      if (appliedFilterQ.trim()) params.set('q', appliedFilterQ.trim());
+      if (appliedFilterStatus) params.set('status', appliedFilterStatus);
+      if (appliedFilterNiche.trim()) params.set('niche', appliedFilterNiche.trim());
+      if (appliedFilterMinDifficulty.trim()) params.set('minDifficulty', appliedFilterMinDifficulty.trim());
+      if (appliedFilterMaxDifficulty.trim()) params.set('maxDifficulty', appliedFilterMaxDifficulty.trim());
+
+      const res = await tenantFetch(`/api/keywords/generate?${params.toString()}`);
       const data = await res.json();
       setKeywords(data.keywords || []);
       if (data.pagination) {
@@ -125,7 +140,11 @@ export default function KeywordsManager() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [appliedFilterMaxDifficulty, appliedFilterMinDifficulty, appliedFilterNiche, appliedFilterQ, appliedFilterStatus]);
+
+  useEffect(() => {
+    void fetchKeywords(page);
+  }, [fetchKeywords, page]);
 
   async function generateKeywords(e: React.FormEvent) {
     e.preventDefault();
@@ -155,6 +174,29 @@ export default function KeywordsManager() {
     } finally {
       setGenerating(false);
     }
+  }
+
+  function applyFilters() {
+    setAppliedFilterQ(filterQ);
+    setAppliedFilterStatus(filterStatus);
+    setAppliedFilterNiche(filterNiche);
+    setAppliedFilterMinDifficulty(filterMinDifficulty);
+    setAppliedFilterMaxDifficulty(filterMaxDifficulty);
+    setPage(1);
+  }
+
+  function clearFilters() {
+    setFilterQ('');
+    setFilterStatus('');
+    setFilterNiche('');
+    setFilterMinDifficulty('');
+    setFilterMaxDifficulty('');
+    setAppliedFilterQ('');
+    setAppliedFilterStatus('');
+    setAppliedFilterNiche('');
+    setAppliedFilterMinDifficulty('');
+    setAppliedFilterMaxDifficulty('');
+    setPage(1);
   }
 
   const pendingCount = keywords.filter((keyword) => keyword.status === 'pending').length;
@@ -294,6 +336,69 @@ export default function KeywordsManager() {
             <CardDescription>{pagination.total} records tracked</CardDescription>
           </CardHeader>
           <CardContent className="min-w-0">
+            <div className="mb-4 grid gap-3 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-6">
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Search Keyword</label>
+                <Input
+                  value={filterQ}
+                  onChange={(e) => setFilterQ(e.target.value)}
+                  placeholder="e.g. sandbox ai agent"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Status</label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  disabled={loading}
+                >
+                  <option value="">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="used">Used</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Niche</label>
+                <Input
+                  value={filterNiche}
+                  onChange={(e) => setFilterNiche(e.target.value)}
+                  placeholder="digital marketing"
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Min Difficulty</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={filterMinDifficulty}
+                  onChange={(e) => setFilterMinDifficulty(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Max Difficulty</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={filterMaxDifficulty}
+                  onChange={(e) => setFilterMaxDifficulty(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="md:col-span-6 flex flex-wrap gap-2">
+                <Button type="button" size="sm" onClick={applyFilters} disabled={loading}>
+                  Apply Filters
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={clearFilters} disabled={loading}>
+                  Clear
+                </Button>
+              </div>
+            </div>
             {loading ? (
               <div className="flex justify-center py-8">
                 <Spinner className="h-8 w-8" />
