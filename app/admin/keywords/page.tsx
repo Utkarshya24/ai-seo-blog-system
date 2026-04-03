@@ -25,26 +25,29 @@ interface Keyword {
   searchVolumeSource?: 'gsc' | 'estimated';
   searchVolumeStartDate?: string;
   searchVolumeEndDate?: string;
-  trendStatus?: 'up' | 'stable' | 'down' | 'new' | 'insufficient';
+  trendStatus?: 'up' | 'stable' | 'down' | 'new' | 'no_data' | 'not_available';
   trendGrowthPct?: number | null;
   trendImpressionsLast7?: number;
   trendImpressionsPrev7?: number;
+  trendBasis?: 'exact' | 'close_match' | 'none';
+  trendCloseMatches?: Array<{ query: string; impressions: number }>;
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
 }
 
 function getTrendLabel(keyword: Keyword): string {
-  const status = keyword.trendStatus || 'insufficient';
+  const status = keyword.trendStatus || 'not_available';
   if (status === 'up') return 'Trending Up';
   if (status === 'down') return 'Declining';
   if (status === 'stable') return 'Stable';
   if (status === 'new') return 'New Spike';
-  return 'Insufficient';
+  if (status === 'no_data') return 'No GSC impressions yet';
+  return 'GSC not connected';
 }
 
 function getTrendToneClass(keyword: Keyword): string {
-  const status = keyword.trendStatus || 'insufficient';
+  const status = keyword.trendStatus || 'not_available';
   if (status === 'up' || status === 'new') return 'text-emerald-600';
   if (status === 'down') return 'text-rose-600';
   if (status === 'stable') return 'text-amber-600';
@@ -279,12 +282,23 @@ export default function KeywordsManager() {
                           <span className={getTrendToneClass(keyword)}>
                             {getTrendLabel(keyword)}
                             {typeof keyword.trendGrowthPct === 'number' ? ` (${keyword.trendGrowthPct >= 0 ? '+' : ''}${keyword.trendGrowthPct}%)` : ''}
+                            {keyword.trendBasis === 'close_match' ? ' [Close Match]' : ''}
                           </span>
                         </p>
                         <p className="col-span-2 text-muted-foreground">
                           7d Impr: <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span> | Prev 7d:{' '}
                           <span className="text-foreground">{(keyword.trendImpressionsPrev7 || 0).toLocaleString()}</span>
                         </p>
+                        {keyword.trendCloseMatches && keyword.trendCloseMatches.length > 0 ? (
+                          <p className="col-span-2 text-muted-foreground">
+                            Close matches:{' '}
+                            <span className="text-foreground">
+                              {keyword.trendCloseMatches
+                                .map((item) => `${item.query} (${item.impressions})`)
+                                .join(', ')}
+                            </span>
+                          </p>
+                        ) : null}
                         <p className="col-span-2 text-muted-foreground">
                           Search Volume:{' '}
                           <span className="text-foreground">
@@ -333,6 +347,7 @@ export default function KeywordsManager() {
                         <TableCell>
                           <div className={`text-sm font-medium ${getTrendToneClass(keyword)}`}>
                             {getTrendLabel(keyword)}
+                            {keyword.trendBasis === 'close_match' ? ' [Close Match]' : ''}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {typeof keyword.trendGrowthPct === 'number'
@@ -340,6 +355,13 @@ export default function KeywordsManager() {
                               : 'n/a'}
                             {` | ${keyword.trendImpressionsLast7 || 0} vs ${keyword.trendImpressionsPrev7 || 0}`}
                           </div>
+                          {keyword.trendCloseMatches && keyword.trendCloseMatches.length > 0 ? (
+                            <div className="line-clamp-2 text-xs text-muted-foreground">
+                              {keyword.trendCloseMatches
+                                .map((item) => `${item.query} (${item.impressions})`)
+                                .join(', ')}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{keyword.searchVolume}</div>

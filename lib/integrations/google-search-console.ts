@@ -27,6 +27,19 @@ export interface GscKeywordVolumeInput {
   rowLimit?: number;
 }
 
+export interface GscTopQueryInput {
+  siteUrl: string;
+  startDate: string;
+  endDate: string;
+  accessToken: string;
+  rowLimit?: number;
+}
+
+export interface GscTopQueryRow {
+  query: string;
+  impressions: number;
+}
+
 function extractSlugFromUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -100,6 +113,47 @@ export async function fetchKeywordSearchVolumes(input: GscKeywordVolumeInput): P
   }
 
   return volumeMap;
+}
+
+export async function fetchTopQueries(input: GscTopQueryInput): Promise<GscTopQueryRow[]> {
+  const {
+    siteUrl,
+    startDate,
+    endDate,
+    accessToken,
+    rowLimit = 5000,
+  } = input;
+
+  const endpoint = `https://searchconsole.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      startDate,
+      endDate,
+      dimensions: ['query'],
+      rowLimit,
+      dataState: 'final',
+    }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`[GSC] Top query fetch failed (${response.status}): ${message}`);
+  }
+
+  const payload = (await response.json()) as { rows?: GscRow[] };
+  const rows = payload.rows || [];
+  return rows
+    .map((row) => ({
+      query: row.keys?.[0]?.trim().toLowerCase() || '',
+      impressions: Number(row.impressions || 0),
+    }))
+    .filter((row) => row.query && row.impressions > 0);
 }
 
 export async function syncSearchConsoleMetrics(input: GscSyncInput) {

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import { generateComparisonKeywords, generateKeywords } from '@/lib/ai/openai-service';
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
-import { fetchKeywordSearchVolumes } from '@/lib/integrations/google-search-console';
+import { fetchKeywordSearchVolumes, fetchTopQueries, type GscTopQueryRow } from '@/lib/integrations/google-search-console';
 import { decryptText } from '@/lib/security/crypto';
 import { refreshAccessToken } from '@/lib/integrations/google-oauth';
 import {
@@ -81,17 +81,76 @@ function calculatePriorityScore(params: {
   return Math.max(0, Math.min(100, Number(score.toFixed(1))));
 }
 
-type KeywordTrendStatus = 'up' | 'stable' | 'down' | 'new' | 'insufficient';
+type KeywordTrendStatus = 'up' | 'stable' | 'down' | 'new' | 'no_data' | 'not_available';
+type KeywordTrendBasis = 'exact' | 'close_match' | 'none';
+
+const NOISE_TOKENS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'best',
+  'for',
+  'from',
+  'how',
+  'in',
+  'is',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'vs',
+  'with',
+]);
+
+function tokenizeKeyword(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !NOISE_TOKENS.has(token));
+}
+
+function getTokenOverlapScore(keywordTokens: string[], queryTokens: string[]): number {
+  if (keywordTokens.length === 0 || queryTokens.length === 0) return 0;
+  const querySet = new Set(queryTokens);
+  const overlap = keywordTokens.filter((token) => querySet.has(token)).length;
+  return overlap;
+}
+
+function findCloseMatches(keyword: string, rows: GscTopQueryRow[], take: number = 3): GscTopQueryRow[] {
+  const keywordTokens = tokenizeKeyword(keyword);
+  if (keywordTokens.length === 0) return [];
+
+  return rows
+    .map((row) => {
+      const queryTokens = tokenizeKeyword(row.query);
+      const overlap = getTokenOverlapScore(keywordTokens, queryTokens);
+      const overlapRatio = overlap / keywordTokens.length;
+      return { ...row, overlap, overlapRatio };
+    })
+    .filter((row) => row.overlap >= 2 || row.overlapRatio >= 0.6)
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+      return b.impressions - a.impressions;
+    })
+    .slice(0, take)
+    .map((row) => ({ query: row.query, impressions: row.impressions }));
+}
 
 function computeTrendGrowthPct(last7: number, prev7: number): number | null {
   if (prev7 <= 0) return null;
   return Number((((last7 - prev7) / prev7) * 100).toFixed(1));
 }
 
-function classifyKeywordTrend(last7: number, prev7: number): KeywordTrendStatus {
+function classifyKeywordTrend(last7: number, prev7: number): Exclude<KeywordTrendStatus, 'not_available'> {
   if (prev7 < 20 && last7 >= 50) return 'new';
-  if (last7 === 0 && prev7 === 0) return 'insufficient';
-  if (prev7 <= 0) return last7 > 0 ? 'new' : 'insufficient';
+  if (last7 === 0 && prev7 === 0) return 'no_data';
+  if (prev7 <= 0) return last7 > 0 ? 'new' : 'no_data';
   const growth = ((last7 - prev7) / prev7) * 100;
   if (growth >= 20) return 'up';
   if (growth < -10) return 'down';
@@ -114,6 +173,8 @@ function formatKeywordForResponse(keyword: {
   trendGrowthPct?: number | null;
   trendImpressionsLast7?: number;
   trendImpressionsPrev7?: number;
+  trendBasis?: KeywordTrendBasis;
+  trendCloseMatches?: Array<{ query: string; impressions: number }>;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
   const intent = estimateIntent(keyword.keyword);
@@ -131,10 +192,12 @@ function formatKeywordForResponse(keyword: {
     searchVolumeSource: keyword.searchVolumeSource || 'estimated',
     searchVolumeStartDate: keyword.searchVolumeStartDate,
     searchVolumeEndDate: keyword.searchVolumeEndDate,
-    trendStatus: keyword.trendStatus || 'insufficient',
+    trendStatus: keyword.trendStatus || 'not_available',
     trendGrowthPct: keyword.trendGrowthPct ?? null,
     trendImpressionsLast7: keyword.trendImpressionsLast7 ?? 0,
     trendImpressionsPrev7: keyword.trendImpressionsPrev7 ?? 0,
+    trendBasis: keyword.trendBasis || 'none',
+    trendCloseMatches: keyword.trendCloseMatches || [],
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -337,6 +400,9 @@ export async function GET(request: NextRequest) {
     let gscVolumeMap = new Map<string, number>();
     let gscTrendLast7Map = new Map<string, number>();
     let gscTrendPrev7Map = new Map<string, number>();
+    let last7TopQueries: GscTopQueryRow[] = [];
+    let prev7TopQueries: GscTopQueryRow[] = [];
+    let gscAvailable = false;
 
     if (websiteId && keywords.length > 0) {
       try {
@@ -356,8 +422,9 @@ export async function GET(request: NextRequest) {
         }
 
         if (siteUrl && accessToken) {
+          gscAvailable = true;
           const keywordList = keywords.map((row) => row.keyword);
-          [gscVolumeMap, gscTrendLast7Map, gscTrendPrev7Map] = await Promise.all([
+          [gscVolumeMap, gscTrendLast7Map, gscTrendPrev7Map, last7TopQueries, prev7TopQueries] = await Promise.all([
             fetchKeywordSearchVolumes({
               siteUrl,
               startDate: gscStartDate,
@@ -378,6 +445,18 @@ export async function GET(request: NextRequest) {
               endDate: trendPrev7EndDate,
               accessToken,
               keywords: keywordList,
+            }),
+            fetchTopQueries({
+              siteUrl,
+              startDate: trendLast7StartDate,
+              endDate: trendLast7EndDate,
+              accessToken,
+            }),
+            fetchTopQueries({
+              siteUrl,
+              startDate: trendPrev7StartDate,
+              endDate: trendPrev7EndDate,
+              accessToken,
             }),
           ]);
         }
@@ -406,10 +485,30 @@ export async function GET(request: NextRequest) {
       const normalized = row.keyword.trim().toLowerCase();
       const gscVolume = gscVolumeMap.get(normalized);
       const hasGscVolume = Number.isFinite(gscVolume);
-      const last7 = gscTrendLast7Map.get(normalized) || 0;
-      const prev7 = gscTrendPrev7Map.get(normalized) || 0;
-      const trendStatus = classifyKeywordTrend(last7, prev7);
+      const exactLast7 = gscTrendLast7Map.get(normalized) || 0;
+      const exactPrev7 = gscTrendPrev7Map.get(normalized) || 0;
+      const closeMatchesLast7 = findCloseMatches(row.keyword, last7TopQueries, 3);
+      const closeMatchesPrev7 = findCloseMatches(row.keyword, prev7TopQueries, 3);
+      const closeLast7 = closeMatchesLast7.reduce((sum, item) => sum + item.impressions, 0);
+      const closePrev7 = closeMatchesPrev7.reduce((sum, item) => sum + item.impressions, 0);
+
+      let trendBasis: KeywordTrendBasis = 'none';
+      let last7 = 0;
+      let prev7 = 0;
+
+      if (exactLast7 > 0 || exactPrev7 > 0) {
+        trendBasis = 'exact';
+        last7 = exactLast7;
+        prev7 = exactPrev7;
+      } else if (closeLast7 > 0 || closePrev7 > 0) {
+        trendBasis = 'close_match';
+        last7 = closeLast7;
+        prev7 = closePrev7;
+      }
+
+      const trendStatus: KeywordTrendStatus = gscAvailable ? classifyKeywordTrend(last7, prev7) : 'not_available';
       const trendGrowthPct = computeTrendGrowthPct(last7, prev7);
+
       return formatKeywordForResponse({
         ...row,
         searchVolume: hasGscVolume ? Number(gscVolume) : row.searchVolume,
@@ -420,6 +519,8 @@ export async function GET(request: NextRequest) {
         trendGrowthPct,
         trendImpressionsLast7: last7,
         trendImpressionsPrev7: prev7,
+        trendBasis,
+        trendCloseMatches: trendBasis === 'close_match' ? closeMatchesLast7 : [],
       });
     });
 
