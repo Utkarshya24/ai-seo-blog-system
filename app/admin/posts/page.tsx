@@ -27,7 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
-import { postStatusTones } from '@/lib/ui/status-maps';
+import { postStatusTones, type StatusTone } from '@/lib/ui/status-maps';
 
 interface Post {
   id: string;
@@ -41,6 +41,9 @@ interface Post {
   seoAudit?: {
     score: number;
     suggestions: string[];
+    metricsUsed?: {
+      pageSpeedPerformanceScore?: number;
+    };
     scoreBreakdown?: {
       onPage: number;
       technical: number;
@@ -48,6 +51,20 @@ interface Post {
       performance: number;
     };
   };
+}
+
+const pageSpeedStatusTones: Record<string, StatusTone> = {
+  Good: 'success',
+  'Needs Work': 'warning',
+  Poor: 'danger',
+  Unavailable: 'neutral',
+};
+
+function getPageSpeedStatus(score?: number) {
+  if (!score || score <= 0) return 'Unavailable';
+  if (score >= 70) return 'Good';
+  if (score >= 50) return 'Needs Work';
+  return 'Poor';
 }
 
 interface KeywordOption {
@@ -515,6 +532,16 @@ export default function PostsManager() {
                       <p className="text-xs text-muted-foreground">
                         SEO: <span className="text-foreground">{post.seoAudit?.score ?? 0}/100</span> | Read: <span className="text-foreground">{post.readingTime}m</span>
                       </p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">PageSpeed:</span>
+                        <StatusBadge
+                          label={getPageSpeedStatus(post.seoAudit?.metricsUsed?.pageSpeedPerformanceScore)}
+                          tonesByLabel={pageSpeedStatusTones}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {post.seoAudit?.metricsUsed?.pageSpeedPerformanceScore || 0}/100
+                        </span>
+                      </div>
                       <div className="mt-3">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -561,13 +588,14 @@ export default function PostsManager() {
                 </div>
 
                 <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 lg:block">
-                <Table className="min-w-[1180px] table-fixed">
+                <Table className="min-w-[1280px] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>SEO Score</TableHead>
+                      <TableHead>PageSpeed</TableHead>
                       <TableHead className="hidden lg:table-cell">SEO Suggestions</TableHead>
                       <TableHead className="hidden md:table-cell">Reading Time</TableHead>
                       <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -598,6 +626,17 @@ export default function PostsManager() {
                           >
                             {post.seoAudit?.score ?? 0}/100
                           </span>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <div className="flex flex-col gap-1">
+                            <StatusBadge
+                              label={getPageSpeedStatus(post.seoAudit?.metricsUsed?.pageSpeedPerformanceScore)}
+                              tonesByLabel={pageSpeedStatusTones}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {post.seoAudit?.metricsUsed?.pageSpeedPerformanceScore || 0}/100
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell className="hidden max-w-[280px] align-top whitespace-normal break-words text-sm text-muted-foreground lg:table-cell">
                           {post.seoAudit?.suggestions?.slice(0, 2).join(' ') || 'Looks well optimized.'}
