@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { BookOpenCheck, Clock3, FileText, PenSquare } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
@@ -9,6 +10,7 @@ import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { tenantFetch } from '@/lib/client/tenant';
@@ -42,6 +44,7 @@ interface KeywordOption {
 }
 
 export default function PostsManager() {
+  const searchParams = useSearchParams();
   const [posts, setPosts] = useState<Post[]>([]);
   const [keywords, setKeywords] = useState<KeywordOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +52,12 @@ export default function PostsManager() {
   const [pushingExternalId, setPushingExternalId] = useState<string | null>(null);
   const [linkingPostId, setLinkingPostId] = useState<string | null>(null);
   const [optimizingSeoPostId, setOptimizingSeoPostId] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [loadingEditor, setLoadingEditor] = useState(false);
+  const [savingEditor, setSavingEditor] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editMetaDescription, setEditMetaDescription] = useState('');
+  const [editContent, setEditContent] = useState('');
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -58,6 +67,13 @@ export default function PostsManager() {
   useEffect(() => {
     void fetchData();
   }, []);
+
+  useEffect(() => {
+    const postId = searchParams.get('postId');
+    if (postId) {
+      void openEditor(postId);
+    }
+  }, [searchParams]);
 
   async function fetchData() {
     setLoading(true);
@@ -238,6 +254,59 @@ export default function PostsManager() {
     }
   }
 
+  async function openEditor(postId: string) {
+    setError('');
+    setMessage('');
+    setLoadingEditor(true);
+    try {
+      const res = await tenantFetch(`/api/posts/${postId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to load post editor.');
+        return;
+      }
+      setEditingPostId(postId);
+      setEditTitle(data.post?.title || '');
+      setEditMetaDescription(data.post?.metaDescription || '');
+      setEditContent(data.post?.content || '');
+    } catch (editorError) {
+      console.error('[Posts] openEditor error:', editorError);
+      setError('Failed to load post editor.');
+    } finally {
+      setLoadingEditor(false);
+    }
+  }
+
+  async function saveEditor() {
+    if (!editingPostId) return;
+    setError('');
+    setMessage('');
+    setSavingEditor(true);
+    try {
+      const res = await tenantFetch(`/api/posts/${editingPostId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle,
+          metaDescription: editMetaDescription,
+          content: editContent,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to save post changes.');
+        return;
+      }
+      setMessage('Post updated successfully.');
+      await fetchData();
+    } catch (saveError) {
+      console.error('[Posts] saveEditor error:', saveError);
+      setError('Failed to save post changes.');
+    } finally {
+      setSavingEditor(false);
+    }
+  }
+
   const draftCount = posts.filter((post) => post.status === 'draft').length;
   const publishedCount = posts.filter((post) => post.status === 'published').length;
   const publishedRate = posts.length > 0 ? Math.round((publishedCount / posts.length) * 100) : 0;
@@ -383,6 +452,57 @@ export default function PostsManager() {
           </CardContent>
         </Card>
 
+        {editingPostId ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Edit Blog Post</CardTitle>
+              <CardDescription>Update title, meta description, and content for the selected post.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loadingEditor ? (
+                <div className="flex justify-center py-6">
+                  <Spinner className="h-6 w-6" />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Title</label>
+                    <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Meta Description</label>
+                    <Textarea
+                      value={editMetaDescription}
+                      onChange={(e) => setEditMetaDescription(e.target.value)}
+                      className="min-h-[90px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium">Content (Markdown)</label>
+                    <Textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="min-h-[280px]"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={saveEditor} disabled={savingEditor || !editTitle.trim() || !editMetaDescription.trim() || !editContent.trim()}>
+                      {savingEditor ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setEditingPostId(null)}
+                      disabled={savingEditor}
+                    >
+                      Close Editor
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card>
           <CardHeader>
             <CardTitle>Posts Library</CardTitle>
@@ -476,6 +596,14 @@ export default function PostsManager() {
                               disabled={optimizingSeoPostId === post.id}
                             >
                               {optimizingSeoPostId === post.id ? 'Updating SEO...' : 'Update SEO'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditor(post.id)}
+                              disabled={loadingEditor && editingPostId === post.id}
+                            >
+                              Edit
                             </Button>
                           </div>
                         </TableCell>
