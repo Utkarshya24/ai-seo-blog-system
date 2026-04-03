@@ -26,6 +26,12 @@ interface Post {
   seoAudit?: {
     score: number;
     suggestions: string[];
+    scoreBreakdown?: {
+      onPage: number;
+      technical: number;
+      readability: number;
+      performance: number;
+    };
   };
 }
 
@@ -295,7 +301,7 @@ export default function PostsManager() {
         <KpiCard
           label="Avg SEO Score"
           value={loading ? '-' : avgSeoScore}
-          helper="On-page optimization health"
+          helper="On-page + readability + GSC performance"
           icon={FileText}
           variant="compact"
         />

@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
       },
       include: {
         keyword: true,
+        seoMetrics: true,
       },
     });
 
@@ -127,6 +128,7 @@ export async function POST(request: NextRequest) {
           metaDescription: post.metaDescription,
           content: post.content,
           keyword: post.keyword?.keyword || post.title,
+          metrics: post.seoMetrics,
         }),
       },
     });
@@ -160,6 +162,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           keyword: true,
+          seoMetrics: true,
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -177,6 +180,7 @@ export async function GET(request: NextRequest) {
           metaDescription: post.metaDescription,
           content: post.content,
           keyword: post.keyword?.keyword || post.title,
+          metrics: post.seoMetrics,
         }),
       })),
       pagination: getPaginationMeta({ page, limit, total }),
