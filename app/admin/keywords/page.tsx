@@ -35,6 +35,7 @@ interface Keyword {
   marketTrendGrowthPct?: number | null;
   marketTrendLast7?: number;
   marketTrendPrev7?: number;
+  marketTrendSource?: 'google_trends' | 'tech_news' | 'none';
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -80,6 +81,12 @@ function getMarketTrendToneClass(keyword: Keyword): string {
   if (status === 'down') return 'text-rose-600';
   if (status === 'stable') return 'text-amber-600';
   return 'text-muted-foreground';
+}
+
+function getMarketTrendSourceLabel(keyword: Keyword): string {
+  if (keyword.marketTrendSource === 'google_trends') return 'Google Trends';
+  if (keyword.marketTrendSource === 'tech_news') return 'Tech News';
+  return 'Unavailable';
 }
 
 export default function KeywordsManager() {
@@ -332,6 +339,7 @@ export default function KeywordsManager() {
                               ? ` (${keyword.marketTrendGrowthPct >= 0 ? '+' : ''}${keyword.marketTrendGrowthPct}%)`
                               : ''}
                           </span>
+                          <span className="text-muted-foreground">{` (${getMarketTrendSourceLabel(keyword)})`}</span>
                         </p>
                         <p className="col-span-2 text-muted-foreground">
                           7d Impr: <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span> | Prev 7d:{' '}
@@ -421,6 +429,9 @@ export default function KeywordsManager() {
                               ? `${keyword.marketTrendGrowthPct >= 0 ? '+' : ''}${keyword.marketTrendGrowthPct}%`
                               : 'n/a'}
                             {` | ${keyword.marketTrendLast7 || 0} vs ${keyword.marketTrendPrev7 || 0}`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {getMarketTrendSourceLabel(keyword)}
                           </div>
                         </TableCell>
                         <TableCell>

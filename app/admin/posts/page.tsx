@@ -23,6 +23,10 @@ interface Post {
   publishedAt: string | null;
   createdAt: string;
   keyword: { id: string; keyword: string };
+  seoAudit?: {
+    score: number;
+    suggestions: string[];
+  };
 }
 
 interface KeywordOption {
@@ -38,6 +42,7 @@ export default function PostsManager() {
   const [generating, setGenerating] = useState(false);
   const [pushingExternalId, setPushingExternalId] = useState<string | null>(null);
   const [linkingPostId, setLinkingPostId] = useState<string | null>(null);
+  const [optimizingSeoPostId, setOptimizingSeoPostId] = useState<string | null>(null);
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
   const [postTitle, setPostTitle] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -201,6 +206,32 @@ export default function PostsManager() {
     }
   }
 
+  async function updateSeo(postId: string) {
+    setError('');
+    setMessage('');
+    setOptimizingSeoPostId(postId);
+    try {
+      const res = await tenantFetch('/api/posts/optimize-serp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to update SEO metadata.');
+        return;
+      }
+
+      setMessage('SEO title/meta updated with optimization suggestions.');
+      await fetchData();
+    } catch (optimizeError) {
+      console.error('[Posts] updateSeo error:', optimizeError);
+      setError('Failed to update SEO metadata.');
+    } finally {
+      setOptimizingSeoPostId(null);
+    }
+  }
+
   const draftCount = posts.filter((post) => post.status === 'draft').length;
   const publishedCount = posts.filter((post) => post.status === 'published').length;
   const publishedRate = posts.length > 0 ? Math.round((publishedCount / posts.length) * 100) : 0;
@@ -208,6 +239,10 @@ export default function PostsManager() {
   const avgReadingTime =
     posts.length > 0
       ? Math.round(posts.reduce((sum, post) => sum + (post.readingTime || 0), 0) / posts.length)
+      : 0;
+  const avgSeoScore =
+    posts.length > 0
+      ? Math.round(posts.reduce((sum, post) => sum + (post.seoAudit?.score || 0), 0) / posts.length)
       : 0;
 
   return (
@@ -255,6 +290,13 @@ export default function PostsManager() {
           value={loading ? '-' : `${avgReadingTime}m`}
           helper="Depth benchmark"
           icon={Clock3}
+          variant="compact"
+        />
+        <KpiCard
+          label="Avg SEO Score"
+          value={loading ? '-' : avgSeoScore}
+          helper="On-page optimization health"
+          icon={FileText}
           variant="compact"
         />
       </div>
@@ -353,6 +395,8 @@ export default function PostsManager() {
                       <TableHead>Title</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>SEO Score</TableHead>
+                      <TableHead className="hidden lg:table-cell">SEO Suggestions</TableHead>
                       <TableHead className="hidden md:table-cell">Reading Time</TableHead>
                       <TableHead className="hidden lg:table-cell">Created</TableHead>
                       <TableHead>Actions</TableHead>
@@ -369,6 +413,22 @@ export default function PostsManager() {
                         <TableCell className="max-w-[180px] whitespace-normal break-words">{post.keyword?.keyword}</TableCell>
                         <TableCell>
                           <StatusBadge label={post.status} tonesByLabel={postStatusTones} />
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={
+                              post.seoAudit && post.seoAudit.score >= 80
+                                ? 'font-semibold text-emerald-600'
+                                : post.seoAudit && post.seoAudit.score >= 60
+                                  ? 'font-semibold text-amber-600'
+                                  : 'font-semibold text-rose-600'
+                            }
+                          >
+                            {post.seoAudit?.score ?? 0}/100
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden max-w-[280px] text-sm text-muted-foreground lg:table-cell">
+                          {post.seoAudit?.suggestions?.slice(0, 2).join(' ') || 'Looks well optimized.'}
                         </TableCell>
                         <TableCell className="hidden md:table-cell">{post.readingTime} min</TableCell>
                         <TableCell className="hidden text-muted-foreground lg:table-cell">
@@ -402,6 +462,14 @@ export default function PostsManager() {
                               disabled={linkingPostId === post.id}
                             >
                               {linkingPostId === post.id ? 'Linking...' : 'Auto Internal Links'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => updateSeo(post.id)}
+                              disabled={optimizingSeoPostId === post.id}
+                            >
+                              {optimizingSeoPostId === post.id ? 'Updating SEO...' : 'Update SEO'}
                             </Button>
                           </div>
                         </TableCell>

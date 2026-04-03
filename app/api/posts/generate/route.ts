@@ -6,6 +6,7 @@ import { generateSlug, isValidSeoTitle, SEO_TITLE_MAX_LENGTH, toSeoTitle } from 
 import { requireAdminAuth } from '@/lib/auth/admin-auth';
 import { resolveTenantContext } from '@/lib/tenant-context';
 import { getPaginationMeta, getPaginationParams } from '@/lib/api/pagination';
+import { auditPostSeo } from '@/lib/seo/content-audit';
 
 function getErrorStatus(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'status' in error) {
@@ -121,6 +122,12 @@ export async function POST(request: NextRequest) {
       post: {
         ...post,
         readingTime: calculateReadingTime(post.content),
+        seoAudit: auditPostSeo({
+          title: post.title,
+          metaDescription: post.metaDescription,
+          content: post.content,
+          keyword: post.keyword?.keyword || post.title,
+        }),
       },
     });
   } catch (error) {
@@ -165,6 +172,12 @@ export async function GET(request: NextRequest) {
       posts: posts.map((post) => ({
         ...post,
         readingTime: calculateReadingTime(post.content),
+        seoAudit: auditPostSeo({
+          title: post.title,
+          metaDescription: post.metaDescription,
+          content: post.content,
+          keyword: post.keyword?.keyword || post.title,
+        }),
       })),
       pagination: getPaginationMeta({ page, limit, total }),
     });

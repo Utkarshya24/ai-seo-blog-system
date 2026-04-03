@@ -84,6 +84,7 @@ function calculatePriorityScore(params: {
 type KeywordTrendStatus = 'up' | 'stable' | 'down' | 'new' | 'no_data' | 'not_available';
 type KeywordTrendBasis = 'exact' | 'close_match' | 'none';
 type MarketTrendStatus = 'up' | 'stable' | 'down' | 'no_data' | 'not_available';
+type MarketTrendSource = 'google_trends' | 'tech_news' | 'none';
 
 const NOISE_TOKENS = new Set([
   'a',
@@ -107,6 +108,24 @@ const NOISE_TOKENS = new Set([
   'vs',
   'with',
 ]);
+const DATE_NOISE_TOKENS = new Set([
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+  'today',
+  'latest',
+  'new',
+  'year',
+]);
 
 function tokenizeKeyword(value: string): string[] {
   return value
@@ -125,6 +144,19 @@ function getTokenOverlapScore(keywordTokens: string[], queryTokens: string[]): n
 
 function safeJsonParse<T>(text: string): T {
   return JSON.parse(text.replace(/^\)\]\}',?\n/, '')) as T;
+}
+
+function normalizeKeywordForMarket(value: string): string {
+  const tokens = value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => !DATE_NOISE_TOKENS.has(token))
+    .filter((token) => !/^\d{4}$/.test(token));
+
+  // Keep market query compact to improve Google Trends match rate.
+  return tokens.slice(0, 6).join(' ');
 }
 
 function classifyMarketTrend(last7: number, prev7: number): MarketTrendStatus {
@@ -152,8 +184,17 @@ async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
   try {
+    const normalizedKeyword = normalizeKeywordForMarket(keyword);
+    if (!normalizedKeyword) {
+      return {
+        marketTrendStatus: 'no_data',
+        marketTrendGrowthPct: null,
+        marketTrendLast7: 0,
+        marketTrendPrev7: 0,
+      };
+    }
     const reqPayload = {
-      comparisonItem: [{ keyword, geo: 'US', time: 'today 3-m' }],
+      comparisonItem: [{ keyword: normalizedKeyword, geo: 'US', time: 'today 3-m' }],
       category: 0,
       property: '',
     };
@@ -241,6 +282,56 @@ function findCloseMatches(keyword: string, rows: GscTopQueryRow[], take: number 
     .map((row) => ({ query: row.query, impressions: row.impressions }));
 }
 
+function buildTechNewsMarketSignalMap(rows: Array<{ fetchedAt: Date; trendingKeywords: string[] }>, keywords: string[]) {
+  const now = new Date();
+  const last7Start = new Date(now);
+  last7Start.setDate(now.getDate() - 7);
+
+  const map = new Map<
+    string,
+    { marketTrendStatus: MarketTrendStatus; marketTrendGrowthPct: number | null; marketTrendLast7: number; marketTrendPrev7: number }
+  >();
+
+  for (const keyword of keywords) {
+    const normalized = keyword.trim().toLowerCase();
+    const keywordTokens = tokenizeKeyword(keyword);
+    if (keywordTokens.length === 0) {
+      map.set(normalized, {
+        marketTrendStatus: 'no_data',
+        marketTrendGrowthPct: null,
+        marketTrendLast7: 0,
+        marketTrendPrev7: 0,
+      });
+      continue;
+    }
+
+    let last7 = 0;
+    let prev7 = 0;
+    for (const row of rows) {
+      const rowTokens = new Set(
+        (row.trendingKeywords || []).flatMap((item) => tokenizeKeyword(item))
+      );
+      const overlap = keywordTokens.filter((token) => rowTokens.has(token)).length;
+      if (overlap === 0) continue;
+
+      if (row.fetchedAt >= last7Start) {
+        last7 += overlap;
+      } else {
+        prev7 += overlap;
+      }
+    }
+
+    map.set(normalized, {
+      marketTrendStatus: classifyMarketTrend(last7, prev7),
+      marketTrendGrowthPct: computeTrendGrowthPct(last7, prev7),
+      marketTrendLast7: last7,
+      marketTrendPrev7: prev7,
+    });
+  }
+
+  return map;
+}
+
 function computeTrendGrowthPct(last7: number, prev7: number): number | null {
   if (prev7 <= 0) return null;
   return Number((((last7 - prev7) / prev7) * 100).toFixed(1));
@@ -278,6 +369,7 @@ function formatKeywordForResponse(keyword: {
   marketTrendGrowthPct?: number | null;
   marketTrendLast7?: number;
   marketTrendPrev7?: number;
+  marketTrendSource?: MarketTrendSource;
 }) {
   const derivedStatus = keyword.posts && keyword.posts.length > 0 ? 'used' : 'pending';
   const intent = estimateIntent(keyword.keyword);
@@ -305,6 +397,7 @@ function formatKeywordForResponse(keyword: {
     marketTrendGrowthPct: keyword.marketTrendGrowthPct ?? null,
     marketTrendLast7: keyword.marketTrendLast7 ?? 0,
     marketTrendPrev7: keyword.marketTrendPrev7 ?? 0,
+    marketTrendSource: keyword.marketTrendSource || 'none',
     // Backward-compatible fields expected by existing admin UI.
     status: derivedStatus,
     createdAt: keyword.generatedAt,
@@ -589,6 +682,23 @@ export async function GET(request: NextRequest) {
     }
 
     const marketSignals = await Promise.all(keywords.map((row) => fetchGoogleTrendsMarketSignal(row.keyword)));
+    const techNewsRows = await prisma.techNewsItem.findMany({
+      where: {
+        fetchedAt: {
+          gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+        },
+      },
+      select: {
+        fetchedAt: true,
+        trendingKeywords: true,
+      },
+      orderBy: { fetchedAt: 'desc' },
+      take: 400,
+    });
+    const techNewsSignalMap = buildTechNewsMarketSignalMap(
+      techNewsRows,
+      keywords.map((row) => row.keyword)
+    );
 
     const formatted = keywords.map((row, idx) => {
       const normalized = row.keyword.trim().toLowerCase();
@@ -617,6 +727,19 @@ export async function GET(request: NextRequest) {
 
       const trendStatus: KeywordTrendStatus = gscAvailable ? classifyKeywordTrend(last7, prev7) : 'not_available';
       const trendGrowthPct = computeTrendGrowthPct(last7, prev7);
+      const googleMarket = marketSignals[idx];
+      const techNewsMarket = techNewsSignalMap.get(normalized);
+      const shouldUseTechNews =
+        googleMarket.marketTrendStatus === 'not_available' ||
+        (googleMarket.marketTrendStatus === 'no_data' &&
+          Boolean(techNewsMarket && (techNewsMarket.marketTrendLast7 > 0 || techNewsMarket.marketTrendPrev7 > 0)));
+      const finalMarket = shouldUseTechNews && techNewsMarket ? techNewsMarket : googleMarket;
+      const marketTrendSource: MarketTrendSource =
+        shouldUseTechNews && techNewsMarket
+          ? 'tech_news'
+          : googleMarket.marketTrendStatus === 'not_available'
+            ? 'none'
+            : 'google_trends';
 
       return formatKeywordForResponse({
         ...row,
@@ -630,10 +753,11 @@ export async function GET(request: NextRequest) {
         trendImpressionsPrev7: prev7,
         trendBasis,
         trendCloseMatches: trendBasis === 'close_match' ? closeMatchesLast7 : [],
-        marketTrendStatus: marketSignals[idx]?.marketTrendStatus,
-        marketTrendGrowthPct: marketSignals[idx]?.marketTrendGrowthPct,
-        marketTrendLast7: marketSignals[idx]?.marketTrendLast7,
-        marketTrendPrev7: marketSignals[idx]?.marketTrendPrev7,
+        marketTrendStatus: finalMarket.marketTrendStatus,
+        marketTrendGrowthPct: finalMarket.marketTrendGrowthPct,
+        marketTrendLast7: finalMarket.marketTrendLast7,
+        marketTrendPrev7: finalMarket.marketTrendPrev7,
+        marketTrendSource,
       });
     });
 
