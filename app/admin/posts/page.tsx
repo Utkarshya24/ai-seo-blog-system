@@ -478,8 +478,37 @@ export default function PostsManager() {
                 <Spinner className="h-8 w-8" />
               </div>
             ) : posts.length > 0 ? (
-              <div className="max-w-full overflow-x-auto rounded-lg border border-border/60">
-                <Table className="min-w-[900px]">
+              <>
+                <div className="space-y-3 lg:hidden">
+                  {posts.map((post) => (
+                    <div key={post.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
+                      <div className="mb-2 flex items-start justify-between gap-2">
+                        <Link href={`/blog/${post.slug}`} className="line-clamp-2 text-sm font-semibold text-primary hover:underline">
+                          {post.title}
+                        </Link>
+                        <StatusBadge label={post.status} tonesByLabel={postStatusTones} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Keyword: <span className="text-foreground">{post.keyword?.keyword}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        SEO: <span className="text-foreground">{post.seoAudit?.score ?? 0}/100</span> | Read: <span className="text-foreground">{post.readingTime}m</span>
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openEditor(post.id)}>Edit</Button>
+                        <Button size="sm" variant="outline" onClick={() => updateSeo(post.id)} disabled={optimizingSeoPostId === post.id}>
+                          {optimizingSeoPostId === post.id ? 'Updating...' : 'Update SEO'}
+                        </Button>
+                        {post.status === 'draft' ? (
+                          <Button size="sm" variant="outline" onClick={() => publishPost(post.id)}>Publish</Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 lg:block">
+                <Table className="min-w-[1180px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
@@ -495,7 +524,7 @@ export default function PostsManager() {
                   <TableBody>
                     {posts.map((post) => (
                       <TableRow key={post.id}>
-                        <TableCell className="max-w-[220px] font-medium whitespace-normal break-words">
+                        <TableCell className="max-w-[260px] font-medium whitespace-normal break-words">
                           <Link href={`/blog/${post.slug}`} className="line-clamp-2 text-primary hover:underline">
                             {post.title}
                           </Link>
@@ -520,8 +549,8 @@ export default function PostsManager() {
                         <TableCell className="hidden max-w-[280px] text-sm text-muted-foreground lg:table-cell">
                           {post.seoAudit?.suggestions?.slice(0, 2).join(' ') || 'Looks well optimized.'}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">{post.readingTime} min</TableCell>
-                        <TableCell className="hidden text-muted-foreground lg:table-cell">
+                        <TableCell className="hidden xl:table-cell">{post.readingTime} min</TableCell>
+                        <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(post.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
@@ -576,6 +605,7 @@ export default function PostsManager() {
                   </TableBody>
                 </Table>
               </div>
+              </>
             ) : (
               <p className="py-8 text-center text-muted-foreground">No posts yet. Start by generating a draft.</p>
             )}

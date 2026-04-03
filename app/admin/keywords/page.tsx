@@ -405,7 +405,7 @@ export default function KeywordsManager() {
               </div>
             ) : keywords.length > 0 ? (
               <>
-                <div className="space-y-3 md:hidden">
+                <div className="space-y-3 xl:hidden">
                   {keywords.map((keyword) => (
                     <div key={keyword.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
                       <div className="mb-2 flex items-start justify-between gap-2">
@@ -471,8 +471,8 @@ export default function KeywordsManager() {
                   ))}
                 </div>
 
-                <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 pb-2 md:block">
-                  <Table className="min-w-[900px]">
+                <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 pb-2 xl:block">
+                  <Table className="min-w-[1380px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="hidden lg:table-cell">ID</TableHead>
@@ -485,9 +485,9 @@ export default function KeywordsManager() {
                       <TableHead>Trend</TableHead>
                       <TableHead>Market</TableHead>
                       <TableHead>Search Volume</TableHead>
-                      <TableHead className="hidden md:table-cell">Generated</TableHead>
-                      <TableHead className="hidden lg:table-cell">Created</TableHead>
-                      <TableHead className="hidden lg:table-cell">Updated</TableHead>
+                      <TableHead className="hidden xl:table-cell">Generated</TableHead>
+                      <TableHead className="hidden 2xl:table-cell">Created</TableHead>
+                      <TableHead className="hidden 2xl:table-cell">Updated</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -547,13 +547,13 @@ export default function KeywordsManager() {
                               : 'Estimated'}
                           </div>
                         </TableCell>
-                        <TableCell className="hidden text-muted-foreground md:table-cell">
+                        <TableCell className="hidden text-muted-foreground xl:table-cell">
                           {new Date(keyword.generatedAt).toLocaleString()}
                         </TableCell>
-                        <TableCell className="hidden text-muted-foreground lg:table-cell">
+                        <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(keyword.createdAt).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="hidden text-muted-foreground lg:table-cell">
+                        <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(keyword.updatedAt).toLocaleString()}
                         </TableCell>
                       </TableRow>
