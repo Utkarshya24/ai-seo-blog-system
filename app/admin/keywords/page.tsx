@@ -405,7 +405,7 @@ export default function KeywordsManager() {
               </div>
             ) : keywords.length > 0 ? (
               <>
-                <div className="space-y-3 xl:hidden">
+                <div className="hidden space-y-3">
                   {keywords.map((keyword) => (
                     <div key={keyword.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
                       <div className="mb-2 flex items-start justify-between gap-2">
@@ -471,7 +471,7 @@ export default function KeywordsManager() {
                   ))}
                 </div>
 
-                <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 pb-2 xl:block">
+                <div className="w-full max-w-[calc(100vw-2rem)] overflow-x-auto rounded-lg border border-border/60 pb-2">
                   <Table className="min-w-[1380px]">
                   <TableHeader>
                     <TableRow>
@@ -496,10 +496,10 @@ export default function KeywordsManager() {
                         <TableCell className="hidden max-w-[120px] truncate font-mono text-xs text-muted-foreground lg:table-cell">
                           {keyword.id}
                         </TableCell>
-                        <TableCell className="max-w-[220px] whitespace-normal break-words font-medium">
+                        <TableCell className="max-w-[320px] whitespace-nowrap font-medium">
                           {keyword.keyword}
                         </TableCell>
-                        <TableCell className="max-w-[140px] whitespace-normal break-words">{keyword.niche}</TableCell>
+                        <TableCell className="max-w-[180px] whitespace-nowrap">{keyword.niche}</TableCell>
                         <TableCell>
                           <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
                         </TableCell>
