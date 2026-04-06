@@ -172,6 +172,106 @@ const marketTrendCache = new Map<
   string,
   { expiresAt: number; value: { marketTrendStatus: MarketTrendStatus; marketTrendGrowthPct: number | null; marketTrendLast7: number; marketTrendPrev7: number } }
 >();
+const GOOGLE_TRENDS_HEADERS = {
+  'User-Agent': 'Mozilla/5.0',
+  Accept: 'application/json, text/plain, */*',
+};
+const GOOGLE_TRENDS_MIN_INTERVAL_MS = 450;
+const GOOGLE_TRENDS_RETRY_DELAYS_MS = [900, 2200];
+const GOOGLE_TRENDS_COOLDOWN_MS = 10 * 60 * 1000;
+let googleTrendsLastRequestAt = 0;
+let googleTrendsQueue: Promise<void> = Promise.resolve();
+let googleTrendsBlockedUntil = 0;
+let googleTrendsBlockLogUntil = 0;
+
+type TrendsSignal = {
+  marketTrendStatus: MarketTrendStatus;
+  marketTrendGrowthPct: number | null;
+  marketTrendLast7: number;
+  marketTrendPrev7: number;
+};
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function makeHttpStatusError(stage: string, status: number): Error & { status: number } {
+  const error = new Error(`${stage} ${status}`) as Error & { status: number };
+  error.status = status;
+  return error;
+}
+
+function isRateLimitError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (!Number.isNaN(status)) return status === 429;
+  }
+  return error instanceof Error && error.message.includes('429');
+}
+
+function notAvailableMarketSignal(): TrendsSignal {
+  return {
+    marketTrendStatus: 'not_available',
+    marketTrendGrowthPct: null,
+    marketTrendLast7: 0,
+    marketTrendPrev7: 0,
+  };
+}
+
+function noDataMarketSignal(): TrendsSignal {
+  return {
+    marketTrendStatus: 'no_data',
+    marketTrendGrowthPct: null,
+    marketTrendLast7: 0,
+    marketTrendPrev7: 0,
+  };
+}
+
+async function withGoogleTrendsThrottle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = googleTrendsQueue.then(async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, googleTrendsLastRequestAt + GOOGLE_TRENDS_MIN_INTERVAL_MS - now);
+    if (waitMs > 0) await sleep(waitMs);
+
+    try {
+      return await fn();
+    } finally {
+      googleTrendsLastRequestAt = Date.now();
+    }
+  });
+
+  googleTrendsQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+
+  return run;
+}
+
+async function fetchGoogleTrendsJson<T>(url: string, stage: 'explore' | 'multiline'): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= GOOGLE_TRENDS_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await withGoogleTrendsThrottle(async () => {
+        const response = await fetch(url, {
+          headers: GOOGLE_TRENDS_HEADERS,
+          cache: 'no-store',
+        });
+        if (!response.ok) throw makeHttpStatusError(stage, response.status);
+
+        const body = await response.text();
+        return safeJsonParse<T>(body);
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimitError(error) || attempt === GOOGLE_TRENDS_RETRY_DELAYS_MS.length) break;
+      await sleep(GOOGLE_TRENDS_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  throw lastError;
+}
 
 async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
   marketTrendStatus: MarketTrendStatus;
@@ -182,16 +282,24 @@ async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
   const cacheKey = keyword.trim().toLowerCase();
   const cached = marketTrendCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (Date.now() < googleTrendsBlockedUntil) {
+    const fallback = notAvailableMarketSignal();
+    marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 30 * 60 * 1000, value: fallback });
+
+    if (Date.now() > googleTrendsBlockLogUntil) {
+      console.warn(
+        `[API] Google Trends requests are temporarily paused until ${new Date(googleTrendsBlockedUntil).toISOString()} after rate limiting.`
+      );
+      googleTrendsBlockLogUntil = Date.now() + 60 * 1000;
+    }
+
+    return fallback;
+  }
 
   try {
     const normalizedKeyword = normalizeKeywordForMarket(keyword);
     if (!normalizedKeyword) {
-      return {
-        marketTrendStatus: 'no_data',
-        marketTrendGrowthPct: null,
-        marketTrendLast7: 0,
-        marketTrendPrev7: 0,
-      };
+      return noDataMarketSignal();
     }
     const reqPayload = {
       comparisonItem: [{ keyword: normalizedKeyword, geo: 'US', time: 'today 3-m' }],
@@ -201,39 +309,26 @@ async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
     const exploreUrl = `https://trends.google.com/trends/api/explore?hl=en-US&tz=0&req=${encodeURIComponent(
       JSON.stringify(reqPayload)
     )}`;
-    const exploreRes = await fetch(exploreUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json, text/plain, */*' },
-      cache: 'no-store',
-    });
-    if (!exploreRes.ok) throw new Error(`explore ${exploreRes.status}`);
-
-    const exploreText = await exploreRes.text();
-    const explore = safeJsonParse<{ widgets?: Array<{ id?: string; token?: string; request?: unknown }> }>(exploreText);
+    const explore = await fetchGoogleTrendsJson<{ widgets?: Array<{ id?: string; token?: string; request?: unknown }> }>(
+      exploreUrl,
+      'explore'
+    );
     const widget = (explore.widgets || []).find((row) => row.id === 'TIMESERIES');
     if (!widget?.token || !widget.request) throw new Error('missing timeseries widget');
 
     const multilineUrl =
       `https://trends.google.com/trends/api/widgetdata/multiline?hl=en-US&tz=0` +
       `&req=${encodeURIComponent(JSON.stringify(widget.request))}&token=${encodeURIComponent(widget.token)}`;
-    const multilineRes = await fetch(multilineUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json, text/plain, */*' },
-      cache: 'no-store',
-    });
-    if (!multilineRes.ok) throw new Error(`multiline ${multilineRes.status}`);
-
-    const multilineText = await multilineRes.text();
-    const multiline = safeJsonParse<{ default?: { timelineData?: Array<{ value?: number[] }> } }>(multilineText);
+    const multiline = await fetchGoogleTrendsJson<{ default?: { timelineData?: Array<{ value?: number[] }> } }>(
+      multilineUrl,
+      'multiline'
+    );
     const points = (multiline.default?.timelineData || [])
       .map((row) => Number(row.value?.[0] || 0))
       .filter((value) => Number.isFinite(value));
 
     if (points.length < 14) {
-      const value = {
-        marketTrendStatus: 'no_data' as MarketTrendStatus,
-        marketTrendGrowthPct: null,
-        marketTrendLast7: 0,
-        marketTrendPrev7: 0,
-      };
+      const value = noDataMarketSignal();
       marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 6 * 60 * 60 * 1000, value });
       return value;
     }
@@ -250,13 +345,11 @@ async function fetchGoogleTrendsMarketSignal(keyword: string): Promise<{
     marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 6 * 60 * 60 * 1000, value });
     return value;
   } catch (error) {
+    if (isRateLimitError(error)) {
+      googleTrendsBlockedUntil = Date.now() + GOOGLE_TRENDS_COOLDOWN_MS;
+    }
     console.warn('[API] Google Trends fetch failed:', error);
-    const fallback = {
-      marketTrendStatus: 'not_available' as MarketTrendStatus,
-      marketTrendGrowthPct: null,
-      marketTrendLast7: 0,
-      marketTrendPrev7: 0,
-    };
+    const fallback = notAvailableMarketSignal();
     marketTrendCache.set(cacheKey, { expiresAt: Date.now() + 30 * 60 * 1000, value: fallback });
     return fallback;
   }
@@ -681,7 +774,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const marketSignals = await Promise.all(keywords.map((row) => fetchGoogleTrendsMarketSignal(row.keyword)));
+    const marketSignals: TrendsSignal[] = [];
+    for (const row of keywords) {
+      marketSignals.push(await fetchGoogleTrendsMarketSignal(row.keyword));
+    }
     const techNewsRows = await prisma.techNewsItem.findMany({
       where: {
         fetchedAt: {
