@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { BarChart3, CircleDashed, Search, Target } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
@@ -113,6 +114,8 @@ export default function KeywordsManager() {
   const [count, setCount] = useState(5);
   const [mode, setMode] = useState<'mixed' | 'standard' | 'comparison'>('mixed');
   const [generating, setGenerating] = useState(false);
+  const [creatingKeywordId, setCreatingKeywordId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   const fetchKeywords = useCallback(async (nextPage: number) => {
@@ -173,6 +176,34 @@ export default function KeywordsManager() {
       setError('Keyword generation failed due to network/server issue.');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function createBlogForKeyword(keyword: Keyword) {
+    setCreatingKeywordId(keyword.id);
+    setError('');
+    setMessage('');
+    try {
+      const res = await tenantFetch('/api/posts/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keywordId: keyword.id,
+          title: keyword.keyword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to create blog.');
+        return;
+      }
+      setMessage(`Blog created for "${keyword.keyword}".`);
+      await fetchKeywords(page);
+    } catch (createError) {
+      console.error('[Keywords] Error creating blog:', createError);
+      setError('Failed to create blog.');
+    } finally {
+      setCreatingKeywordId(null);
     }
   }
 
@@ -327,13 +358,25 @@ export default function KeywordsManager() {
                 {error}
               </p>
             ) : null}
+            {message ? (
+              <p className="mt-4 rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-sm text-primary">
+                {message}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Keyword Backlog</CardTitle>
-            <CardDescription>{pagination.total} records tracked</CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <CardTitle>Keyword Backlog</CardTitle>
+                <CardDescription>{pagination.total} records tracked</CardDescription>
+              </div>
+              <Button asChild>
+                <Link href="/admin/posts">Create Blog</Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="min-w-0">
             <div className="mb-4 grid gap-3 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-6">
@@ -488,6 +531,7 @@ export default function KeywordsManager() {
                       <TableHead className="hidden xl:table-cell">Generated</TableHead>
                       <TableHead className="hidden 2xl:table-cell">Created</TableHead>
                       <TableHead className="hidden 2xl:table-cell">Updated</TableHead>
+                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -555,6 +599,16 @@ export default function KeywordsManager() {
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(keyword.updatedAt).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => void createBlogForKeyword(keyword)}
+                            disabled={creatingKeywordId !== null || keyword.status !== 'pending'}
+                          >
+                            {creatingKeywordId === keyword.id ? 'Creating...' : 'Create Blog'}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

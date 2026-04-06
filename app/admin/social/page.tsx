@@ -27,6 +27,53 @@ interface SocialDraft {
   createdAt: string;
 }
 
+interface StoredGeneratedImage {
+  postId: string;
+  variant: 'banner' | 'social';
+  url: string;
+  createdAt: string;
+}
+
+const SOCIAL_IMAGES_STORAGE_KEY = 'seo-social-generated-images';
+
+function readStoredImages(): StoredGeneratedImage[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SOCIAL_IMAGES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item) => {
+        const row = item as Partial<StoredGeneratedImage>;
+        if (
+          !row ||
+          typeof row.postId !== 'string' ||
+          (row.variant !== 'banner' && row.variant !== 'social') ||
+          typeof row.url !== 'string' ||
+          typeof row.createdAt !== 'string'
+        ) {
+          return null;
+        }
+        return {
+          postId: row.postId,
+          variant: row.variant,
+          url: row.url,
+          createdAt: row.createdAt,
+        };
+      })
+      .filter((item): item is StoredGeneratedImage => item !== null);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredImages(images: StoredGeneratedImage[]) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(SOCIAL_IMAGES_STORAGE_KEY, JSON.stringify(images));
+}
+
 export default function SocialPage() {
   const [posts, setPosts] = useState<PostOption[]>([]);
   const [selectedPostId, setSelectedPostId] = useState('');
@@ -37,8 +84,13 @@ export default function SocialPage() {
   const [message, setMessage] = useState('');
   const [bannerImageUrl, setBannerImageUrl] = useState('');
   const [socialImageUrl, setSocialImageUrl] = useState('');
+  const [storedImages, setStoredImages] = useState<StoredGeneratedImage[]>([]);
   const [generatingImage, setGeneratingImage] = useState<'banner' | 'social' | null>(null);
   const [customImagePrompt, setCustomImagePrompt] = useState('');
+
+  useEffect(() => {
+    setStoredImages(readStoredImages());
+  }, []);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -137,6 +189,19 @@ export default function SocialPage() {
       } else {
         setSocialImageUrl(imageUrl);
       }
+
+      const nextImage: StoredGeneratedImage = {
+        postId: selectedPostId,
+        variant,
+        url: imageUrl,
+        createdAt: new Date().toISOString(),
+      };
+      setStoredImages((current) => {
+        const next = [nextImage, ...current].slice(0, 100);
+        writeStoredImages(next);
+        return next;
+      });
+
       setMessage(`${variant === 'banner' ? 'Banner' : 'Social'} image generated.`);
     } catch (imageError) {
       console.error('[Social] generateImage error:', imageError);
@@ -149,6 +214,20 @@ export default function SocialPage() {
   useEffect(() => {
     void loadDrafts(selectedPostId);
   }, [selectedPostId, loadDrafts]);
+
+  useEffect(() => {
+    if (!selectedPostId) {
+      setBannerImageUrl('');
+      setSocialImageUrl('');
+      return;
+    }
+
+    const postImages = storedImages.filter((image) => image.postId === selectedPostId);
+    const latestBanner = postImages.find((image) => image.variant === 'banner');
+    const latestSocial = postImages.find((image) => image.variant === 'social');
+    setBannerImageUrl(latestBanner?.url || '');
+    setSocialImageUrl(latestSocial?.url || '');
+  }, [selectedPostId, storedImages]);
 
   const latestLinkedin = drafts.find((d) => d.platform === 'LINKEDIN');
   const latestX = drafts.find((d) => d.platform === 'X');
@@ -164,6 +243,16 @@ export default function SocialPage() {
     } catch {
       setMessage('Unable to copy automatically.');
     }
+  }
+
+  function downloadImage(imageUrl: string, variant: 'banner' | 'social') {
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = `${variant}-${selectedPostId || 'social-image'}-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setMessage(`${variant === 'banner' ? 'Banner' : 'Social'} image download started.`);
   }
 
   return (
@@ -320,6 +409,9 @@ export default function SocialPage() {
                     <Button variant="outline" onClick={() => copyText(bannerImageUrl)}>
                       Copy Banner URL
                     </Button>
+                    <Button variant="outline" onClick={() => downloadImage(bannerImageUrl, 'banner')}>
+                      Download Image
+                    </Button>
                     <Button variant="outline" onClick={() => window.open(bannerImageUrl, '_blank', 'noopener,noreferrer')}>
                       Open
                     </Button>
@@ -344,6 +436,9 @@ export default function SocialPage() {
                   <div className="flex gap-2">
                     <Button variant="outline" onClick={() => copyText(socialImageUrl)}>
                       Copy Social URL
+                    </Button>
+                    <Button variant="outline" onClick={() => downloadImage(socialImageUrl, 'social')}>
+                      Download Image
                     </Button>
                     <Button variant="outline" onClick={() => window.open(socialImageUrl, '_blank', 'noopener,noreferrer')}>
                       Open
