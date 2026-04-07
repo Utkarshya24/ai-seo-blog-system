@@ -58,19 +58,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'postId is required' }, { status: 400 });
     }
 
-    const rawTargetWebhook = webhookUrl || DEFAULT_WEBHOOK_URL;
-    if (!rawTargetWebhook) {
-      return NextResponse.json(
-        { error: 'No webhook URL configured. Set EXTERNAL_PUBLISH_WEBHOOK_URL or pass webhookUrl in request.' },
-        { status: 400 }
-      );
-    }
-    const webhookValidation = validateWebhookUrl(rawTargetWebhook);
-    if (!webhookValidation.ok) {
-      return NextResponse.json({ error: webhookValidation.error }, { status: 400 });
-    }
-    const targetWebhook = webhookValidation.url;
-
     let post = await prisma.post.findUnique({
       where: { id: postId },
       include: { keyword: true },
@@ -85,6 +72,28 @@ export async function POST(request: NextRequest) {
     if (websiteId && post.websiteId && post.websiteId !== websiteId) {
       return NextResponse.json({ error: 'Post does not belong to website' }, { status: 403 });
     }
+
+    const website = post.websiteId
+      ? await prisma.website.findUnique({
+          where: { id: post.websiteId },
+          select: { externalWebhookUrl: true },
+        })
+      : null;
+    const rawTargetWebhook = webhookUrl || website?.externalWebhookUrl || DEFAULT_WEBHOOK_URL;
+    if (!rawTargetWebhook) {
+      return NextResponse.json(
+        {
+          error:
+            'No webhook URL configured. Save website webhook URL, set EXTERNAL_PUBLISH_WEBHOOK_URL, or pass webhookUrl in request.',
+        },
+        { status: 400 }
+      );
+    }
+    const webhookValidation = validateWebhookUrl(rawTargetWebhook);
+    if (!webhookValidation.ok) {
+      return NextResponse.json({ error: webhookValidation.error }, { status: 400 });
+    }
+    const targetWebhook = webhookValidation.url;
 
     if (publishIfDraft && post.status === 'draft') {
       post = await prisma.post.update({

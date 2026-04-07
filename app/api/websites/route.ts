@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
     const name = String(body.name || '').trim();
     const domain = String(body.domain || '').trim();
     const baseUrl = String(body.baseUrl || '').trim();
+    const externalWebhookUrl = String(body.externalWebhookUrl || '').trim();
     const niche = String(body.niche || 'general').trim();
 
     if (!tenantId || !name || !domain || !baseUrl) {
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
         name,
         domain,
         baseUrl,
+        ...(externalWebhookUrl ? { externalWebhookUrl } : {}),
         niche,
       },
     });

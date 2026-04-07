@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { BarChart3, CircleDashed, Search, Target } from 'lucide-react';
+import { BarChart3, CircleDashed, Eye, Search, Target } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,6 +17,8 @@ import { keywordStatusTones } from '@/lib/ui/status-maps';
 
 interface Keyword {
   id: string;
+  tenantId?: string;
+  websiteId?: string;
   keyword: string;
   niche: string;
   status: string;
@@ -40,6 +43,7 @@ interface Keyword {
   generatedAt: string;
   createdAt: string;
   updatedAt: string;
+  posts?: Array<{ id: string }>;
 }
 
 interface PaginationMeta {
@@ -90,6 +94,26 @@ function getMarketTrendSourceLabel(keyword: Keyword): string {
   return 'Unavailable';
 }
 
+function getKeywordTrendMetricLabel(): string {
+  return 'Google Search Console keyword impressions';
+}
+
+function getMarketTrendMetricLabel(keyword: Keyword): string {
+  if (keyword.marketTrendSource === 'google_trends') return 'Google Trends interest score';
+  if (keyword.marketTrendSource === 'tech_news') return 'Technology news mention count';
+  return 'Market Signals';
+}
+
+function getMarketTrendMetricDescription(keyword: Keyword): string {
+  if (keyword.marketTrendSource === 'google_trends') {
+    return 'Each number is a Google Trends index value from 0 to 100 for the keyword topic.';
+  }
+  if (keyword.marketTrendSource === 'tech_news') {
+    return 'Each number is the count of related keyword mentions detected in tracked technology news.';
+  }
+  return 'Each number is a normalized market signal score for this keyword.';
+}
+
 export default function KeywordsManager() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta>({
@@ -103,18 +127,15 @@ export default function KeywordsManager() {
   const [filterQ, setFilterQ] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterNiche, setFilterNiche] = useState('');
-  const [filterMinDifficulty, setFilterMinDifficulty] = useState('');
-  const [filterMaxDifficulty, setFilterMaxDifficulty] = useState('');
   const [appliedFilterQ, setAppliedFilterQ] = useState('');
   const [appliedFilterStatus, setAppliedFilterStatus] = useState('');
   const [appliedFilterNiche, setAppliedFilterNiche] = useState('');
-  const [appliedFilterMinDifficulty, setAppliedFilterMinDifficulty] = useState('');
-  const [appliedFilterMaxDifficulty, setAppliedFilterMaxDifficulty] = useState('');
   const [niche, setNiche] = useState('');
   const [count, setCount] = useState(5);
   const [mode, setMode] = useState<'mixed' | 'standard' | 'comparison'>('mixed');
   const [generating, setGenerating] = useState(false);
   const [creatingKeywordId, setCreatingKeywordId] = useState<string | null>(null);
+  const [selectedKeyword, setSelectedKeyword] = useState<Keyword | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -128,8 +149,6 @@ export default function KeywordsManager() {
       if (appliedFilterQ.trim()) params.set('q', appliedFilterQ.trim());
       if (appliedFilterStatus) params.set('status', appliedFilterStatus);
       if (appliedFilterNiche.trim()) params.set('niche', appliedFilterNiche.trim());
-      if (appliedFilterMinDifficulty.trim()) params.set('minDifficulty', appliedFilterMinDifficulty.trim());
-      if (appliedFilterMaxDifficulty.trim()) params.set('maxDifficulty', appliedFilterMaxDifficulty.trim());
 
       const res = await tenantFetch(`/api/keywords/generate?${params.toString()}`);
       const data = await res.json();
@@ -143,7 +162,7 @@ export default function KeywordsManager() {
     } finally {
       setLoading(false);
     }
-  }, [appliedFilterMaxDifficulty, appliedFilterMinDifficulty, appliedFilterNiche, appliedFilterQ, appliedFilterStatus]);
+  }, [appliedFilterNiche, appliedFilterQ, appliedFilterStatus]);
 
   useEffect(() => {
     void fetchKeywords(page);
@@ -211,8 +230,6 @@ export default function KeywordsManager() {
     setAppliedFilterQ(filterQ);
     setAppliedFilterStatus(filterStatus);
     setAppliedFilterNiche(filterNiche);
-    setAppliedFilterMinDifficulty(filterMinDifficulty);
-    setAppliedFilterMaxDifficulty(filterMaxDifficulty);
     setPage(1);
   }
 
@@ -220,13 +237,9 @@ export default function KeywordsManager() {
     setFilterQ('');
     setFilterStatus('');
     setFilterNiche('');
-    setFilterMinDifficulty('');
-    setFilterMaxDifficulty('');
     setAppliedFilterQ('');
     setAppliedFilterStatus('');
     setAppliedFilterNiche('');
-    setAppliedFilterMinDifficulty('');
-    setAppliedFilterMaxDifficulty('');
     setPage(1);
   }
 
@@ -244,6 +257,18 @@ export default function KeywordsManager() {
     [keywords]
   );
   const pendingRate = keywords.length > 0 ? Math.round((pendingCount / keywords.length) * 100) : 0;
+  const sortedKeywords = useMemo(
+    () =>
+      [...keywords].sort(
+        (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
+      ),
+    [keywords]
+  );
+
+  function formatDate(value?: string) {
+    if (!value) return 'N/A';
+    return new Date(value).toLocaleString();
+  }
 
   return (
     <AdminShell
@@ -299,7 +324,7 @@ export default function KeywordsManager() {
         />
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-6">
+      <div className="mt-4 grid min-w-0 gap-4">
         <Card>
           <CardHeader>
             <CardTitle>Generate Keywords</CardTitle>
@@ -379,7 +404,7 @@ export default function KeywordsManager() {
             </div>
           </CardHeader>
           <CardContent className="min-w-0">
-            <div className="mb-4 grid gap-3 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-6">
+            <div className="mb-4 grid gap-3 rounded-lg border border-border/70 bg-background/60 p-3 md:grid-cols-4">
               <div className="md:col-span-2">
                 <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Search Keyword</label>
                 <Input
@@ -411,29 +436,7 @@ export default function KeywordsManager() {
                   disabled={loading}
                 />
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Min Difficulty</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={filterMinDifficulty}
-                  onChange={(e) => setFilterMinDifficulty(e.target.value)}
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Max Difficulty</label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={filterMaxDifficulty}
-                  onChange={(e) => setFilterMaxDifficulty(e.target.value)}
-                  disabled={loading}
-                />
-              </div>
-              <div className="md:col-span-6 flex flex-wrap gap-2">
+              <div className="md:col-span-4 flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={applyFilters} disabled={loading}>
                   Apply Filters
                 </Button>
@@ -449,8 +452,11 @@ export default function KeywordsManager() {
             ) : keywords.length > 0 ? (
               <>
                 <div className="hidden space-y-3">
-                  {keywords.map((keyword) => (
-                    <div key={keyword.id} className="rounded-lg border border-border/70 bg-background/60 p-3">
+                  {sortedKeywords.map((keyword) => (
+                    <div
+                      key={keyword.id}
+                      className="rounded-lg border border-border/70 bg-background/60 p-3"
+                    >
                       <div className="mb-2 flex items-start justify-between gap-2">
                         <p className="text-sm font-semibold leading-5">{keyword.keyword}</p>
                         <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
@@ -490,7 +496,9 @@ export default function KeywordsManager() {
                           <span className="text-muted-foreground">{` (${getMarketTrendSourceLabel(keyword)})`}</span>
                         </p>
                         <p className="col-span-2 text-muted-foreground">
-                          7d Impr: <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span> | Prev 7d:{' '}
+                          Google Search Console impressions (current 7 days vs previous 7 days):{' '}
+                          <span className="text-foreground">{(keyword.trendImpressionsLast7 || 0).toLocaleString()}</span>{' '}
+                          vs{' '}
                           <span className="text-foreground">{(keyword.trendImpressionsPrev7 || 0).toLocaleString()}</span>
                         </p>
                         {keyword.trendCloseMatches && keyword.trendCloseMatches.length > 0 ? (
@@ -509,37 +517,37 @@ export default function KeywordsManager() {
                             {keyword.searchVolume} ({keyword.searchVolumeSource === 'gsc' ? 'GSC' : 'Estimated'})
                           </span>
                         </p>
+                        <div className="col-span-2 pt-1">
+                          <Button type="button" size="sm" variant="outline" onClick={() => setSelectedKeyword(keyword)}>
+                            <Eye className="h-4 w-4" />
+                            View Details
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
 
                 <div className="w-full max-w-[calc(100vw-2rem)] overflow-x-auto rounded-lg border border-border/60 pb-2">
-                  <Table className="min-w-[1380px] table-fixed">
+                  <Table className="min-w-[1180px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="hidden lg:table-cell">ID</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Niche</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Intent</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Difficulty</TableHead>
-                      <TableHead>Trend</TableHead>
-                      <TableHead>Market</TableHead>
-                      <TableHead>Search Volume</TableHead>
-                      <TableHead className="hidden xl:table-cell">Generated</TableHead>
+                      <TableHead className="w-[84px] whitespace-nowrap">Priority</TableHead>
+                      <TableHead className="w-[92px] whitespace-nowrap">Difficulty</TableHead>
+                      <TableHead className="w-[120px] whitespace-nowrap px-2">Trend</TableHead>
+                      <TableHead className="w-[120px] whitespace-nowrap px-2">Market</TableHead>
                       <TableHead className="hidden 2xl:table-cell">Created</TableHead>
                       <TableHead className="hidden 2xl:table-cell">Updated</TableHead>
-                      <TableHead>Action</TableHead>
+                      <TableHead className="w-[64px] whitespace-nowrap px-2">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {keywords.map((keyword) => (
+                    {sortedKeywords.map((keyword) => (
                       <TableRow key={keyword.id}>
-                        <TableCell className="hidden max-w-[120px] truncate font-mono text-xs text-muted-foreground lg:table-cell">
-                          {keyword.id}
-                        </TableCell>
                         <TableCell className="max-w-[320px] whitespace-normal break-words align-top font-medium">
                           {keyword.keyword}
                         </TableCell>
@@ -548,51 +556,25 @@ export default function KeywordsManager() {
                           <StatusBadge label={keyword.status} tonesByLabel={keywordStatusTones} />
                         </TableCell>
                         <TableCell className="capitalize">{keyword.intent || 'informational'}</TableCell>
-                        <TableCell>{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
-                        <TableCell>{keyword.difficulty}</TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">{(keyword.priorityScore ?? 0).toFixed(1)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{keyword.difficulty}</TableCell>
+                        <TableCell className="whitespace-nowrap px-2">
                           <div className={`text-sm font-medium ${getTrendToneClass(keyword)}`}>
-                            {getTrendLabel(keyword)}
-                            {keyword.trendBasis === 'close_match' ? ' [Close Match]' : ''}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
                             {typeof keyword.trendGrowthPct === 'number'
                               ? `${keyword.trendGrowthPct >= 0 ? '+' : ''}${keyword.trendGrowthPct}%`
-                              : 'n/a'}
-                            {` | ${keyword.trendImpressionsLast7 || 0} vs ${keyword.trendImpressionsPrev7 || 0}`}
+                              : 'N/A'}
                           </div>
-                          {keyword.trendCloseMatches && keyword.trendCloseMatches.length > 0 ? (
-                            <div className="line-clamp-2 text-xs text-muted-foreground">
-                              {keyword.trendCloseMatches
-                                .map((item) => `${item.query} (${item.impressions})`)
-                                .join(', ')}
-                            </div>
-                          ) : null}
+                          <div className="text-xs text-muted-foreground">
+                            {(keyword.trendImpressionsLast7 || 0).toLocaleString()} vs {(keyword.trendImpressionsPrev7 || 0).toLocaleString()}
+                          </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap px-2">
                           <div className={`text-sm font-medium ${getMarketTrendToneClass(keyword)}`}>
-                            {getMarketTrendLabel(keyword)}
+                            {keyword.marketTrendStatus ? keyword.marketTrendStatus.toUpperCase() : 'N/A'}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {typeof keyword.marketTrendGrowthPct === 'number'
-                              ? `${keyword.marketTrendGrowthPct >= 0 ? '+' : ''}${keyword.marketTrendGrowthPct}%`
-                              : 'n/a'}
-                            {` | ${keyword.marketTrendLast7 || 0} vs ${keyword.marketTrendPrev7 || 0}`}
+                            {(keyword.marketTrendLast7 || 0).toLocaleString()} vs {(keyword.marketTrendPrev7 || 0).toLocaleString()}
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {getMarketTrendSourceLabel(keyword)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{keyword.searchVolume}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {keyword.searchVolumeSource === 'gsc'
-                              ? `GSC ${keyword.searchVolumeStartDate || ''} to ${keyword.searchVolumeEndDate || ''}`
-                              : 'Estimated'}
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden text-muted-foreground xl:table-cell">
-                          {new Date(keyword.generatedAt).toLocaleString()}
                         </TableCell>
                         <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(keyword.createdAt).toLocaleDateString()}
@@ -600,14 +582,15 @@ export default function KeywordsManager() {
                         <TableCell className="hidden text-muted-foreground 2xl:table-cell">
                           {new Date(keyword.updatedAt).toLocaleString()}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap px-2">
                           <Button
                             type="button"
-                            size="sm"
-                            onClick={() => void createBlogForKeyword(keyword)}
-                            disabled={creatingKeywordId !== null || keyword.status !== 'pending'}
+                            size="icon-sm"
+                            variant="outline"
+                            aria-label={`View details for ${keyword.keyword}`}
+                            onClick={() => setSelectedKeyword(keyword)}
                           >
-                            {creatingKeywordId === keyword.id ? 'Creating...' : 'Create Blog'}
+                            <Eye className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -645,6 +628,148 @@ export default function KeywordsManager() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(selectedKeyword)} onOpenChange={(open) => (open ? undefined : setSelectedKeyword(null))}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+          {selectedKeyword ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-8 text-xl leading-tight">{selectedKeyword.keyword}</DialogTitle>
+                <DialogDescription>
+                  Full keyword intelligence snapshot with trend and market signals.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge label={selectedKeyword.status} tonesByLabel={keywordStatusTones} />
+                  <span className="rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-xs font-medium capitalize">
+                    Intent: {selectedKeyword.intent || 'informational'}
+                  </span>
+                  <span className="rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 text-xs font-medium">
+                    Niche: {selectedKeyword.niche || 'N/A'}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => void createBlogForKeyword(selectedKeyword)}
+                    disabled={creatingKeywordId !== null || selectedKeyword.status !== 'pending'}
+                  >
+                    {creatingKeywordId === selectedKeyword.id ? 'Creating...' : 'Create Blog'}
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                    <p className="text-xs text-muted-foreground">Priority Score</p>
+                    <p className="mt-1 text-lg font-semibold">{(selectedKeyword.priorityScore ?? 0).toFixed(1)}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                    <p className="text-xs text-muted-foreground">Difficulty</p>
+                    <p className="mt-1 text-lg font-semibold">{selectedKeyword.difficulty}</p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                    <p className="text-xs text-muted-foreground">Search Volume</p>
+                    <p className="mt-1 text-lg font-semibold">{selectedKeyword.searchVolume.toLocaleString()}</p>
+                    <p className="mt-1 text-xs text-muted-foreground capitalize">
+                      Source: {selectedKeyword.searchVolumeSource || 'unknown'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-3">
+                    <p className="text-xs text-muted-foreground">Linked Posts</p>
+                    <p className="mt-1 text-lg font-semibold">{selectedKeyword.posts?.length || 0}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+                    <p className="text-sm font-semibold">Keyword Trend</p>
+                    <p className={`mt-1 text-sm font-medium ${getTrendToneClass(selectedKeyword)}`}>
+                      {getTrendLabel(selectedKeyword)}
+                      {typeof selectedKeyword.trendGrowthPct === 'number'
+                        ? ` (${selectedKeyword.trendGrowthPct >= 0 ? '+' : ''}${selectedKeyword.trendGrowthPct}%)`
+                        : ''}
+                      {selectedKeyword.trendBasis === 'close_match' ? ' [Close Match]' : ''}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Metric: {getKeywordTrendMetricLabel()}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Each number is the total impressions recorded in Google Search Console for this keyword.
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Current 7 days: {(selectedKeyword.trendImpressionsLast7 || 0).toLocaleString()} | Previous 7 days:{' '}
+                      {(selectedKeyword.trendImpressionsPrev7 || 0).toLocaleString()}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground capitalize">
+                      Basis: {selectedKeyword.trendBasis || 'none'}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Close Matches:{' '}
+                      {selectedKeyword.trendCloseMatches && selectedKeyword.trendCloseMatches.length > 0
+                        ? selectedKeyword.trendCloseMatches
+                            .map((item) => `${item.query} (${item.impressions})`)
+                            .join(', ')
+                        : 'None'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-border/70 bg-background/60 p-4">
+                    <p className="text-sm font-semibold">Market Trend</p>
+                    <p className={`mt-1 text-sm font-medium ${getMarketTrendToneClass(selectedKeyword)}`}>
+                      {getMarketTrendLabel(selectedKeyword)}
+                      {typeof selectedKeyword.marketTrendGrowthPct === 'number'
+                        ? ` (${selectedKeyword.marketTrendGrowthPct >= 0 ? '+' : ''}${selectedKeyword.marketTrendGrowthPct}%)`
+                        : ''}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Metric: {getMarketTrendMetricLabel(selectedKeyword)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {getMarketTrendMetricDescription(selectedKeyword)}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Current 7 days: {(selectedKeyword.marketTrendLast7 || 0).toLocaleString()} | Previous 7 days:{' '}
+                      {(selectedKeyword.marketTrendPrev7 || 0).toLocaleString()}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Source: {getMarketTrendSourceLabel(selectedKeyword)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-lg border border-border/70 bg-background/60 p-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Keyword ID</p>
+                    <p className="font-mono text-xs">{selectedKeyword.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Tenant ID</p>
+                    <p className="font-mono text-xs">{selectedKeyword.tenantId || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Website ID</p>
+                    <p className="font-mono text-xs">{selectedKeyword.websiteId || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Generated At</p>
+                    <p className="text-sm">{formatDate(selectedKeyword.generatedAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Created At</p>
+                    <p className="text-sm">{formatDate(selectedKeyword.createdAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Updated At</p>
+                    <p className="text-sm">{formatDate(selectedKeyword.updatedAt)}</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   );
 }

@@ -70,6 +70,7 @@ model Website {
   name       String
   domain     String
   baseUrl    String
+  externalWebhookUrl String?
   niche      String   @default("general")
   gscProperty String?
   gscRefreshTokenEnc String?

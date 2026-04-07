@@ -8,6 +8,27 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+export async function GET(request: NextRequest, context: RouteContext) {
+  const authResult = await requireAdminAuth(request, AdminRole.VIEWER);
+  if (!authResult.ok) return authResult.response;
+  const auth = authResult.auth;
+  const { id } = await context.params;
+
+  const website = await prisma.website.findUnique({
+    where: { id },
+  });
+
+  if (!website) {
+    return NextResponse.json({ error: 'Website not found' }, { status: 404 });
+  }
+
+  if (!auth.isGlobal && auth.tenantId !== website.tenantId) {
+    return NextResponse.json({ error: 'Forbidden: website outside tenant scope' }, { status: 403 });
+  }
+
+  return NextResponse.json({ website: toWebsiteSafe(website) });
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const authResult = await requireAdminAuth(request, AdminRole.EDITOR);
   if (!authResult.ok) return authResult.response;
@@ -19,6 +40,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     name: typeof body.name === 'string' ? body.name.trim() : undefined,
     domain: typeof body.domain === 'string' ? body.domain.trim() : undefined,
     baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl.trim() : undefined,
+    externalWebhookUrl:
+      typeof body.externalWebhookUrl === 'string' ? body.externalWebhookUrl.trim() : undefined,
     niche: typeof body.niche === 'string' ? body.niche.trim() : undefined,
     gscProperty: typeof body.gscProperty === 'string' ? body.gscProperty.trim() : undefined,
     isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
@@ -43,6 +66,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ...(payload.name && { name: payload.name }),
       ...(payload.domain && { domain: payload.domain }),
       ...(payload.baseUrl && { baseUrl: payload.baseUrl }),
+      ...(payload.externalWebhookUrl !== undefined && { externalWebhookUrl: payload.externalWebhookUrl || null }),
       ...(payload.niche && { niche: payload.niche }),
       ...(payload.gscProperty !== undefined && { gscProperty: payload.gscProperty || null }),
       ...(typeof payload.isActive === 'boolean' && { isActive: payload.isActive }),

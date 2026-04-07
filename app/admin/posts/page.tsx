@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { BookOpenCheck, Clock3, FileText, PenSquare } from 'lucide-react';
+import { BookOpenCheck, Check, ChevronsUpDown, Clock3, FileText, PenSquare } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { KpiCard } from '@/components/admin-kpi-card';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,10 +24,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { tenantFetch } from '@/lib/client/tenant';
+import { getStoredWebsiteId, tenantFetch } from '@/lib/client/tenant';
 import { postStatusTones, type StatusTone } from '@/lib/ui/status-maps';
 
 interface Post {
@@ -73,6 +75,18 @@ interface KeywordOption {
   status: string;
 }
 
+interface KeywordPaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+interface WebsiteDetails {
+  id: string;
+  externalWebhookUrl?: string | null;
+}
+
 function isBusy(postId: string, params: {
   pushingExternalId: string | null;
   linkingPostId: string | null;
@@ -92,6 +106,7 @@ export default function PostsManager() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [keywords, setKeywords] = useState<KeywordOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingKeywordOptions, setLoadingKeywordOptions] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [pushingExternalId, setPushingExternalId] = useState<string | null>(null);
   const [linkingPostId, setLinkingPostId] = useState<string | null>(null);
@@ -103,14 +118,84 @@ export default function PostsManager() {
   const [editMetaDescription, setEditMetaDescription] = useState('');
   const [editContent, setEditContent] = useState('');
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
+  const [selectedKeywordLabel, setSelectedKeywordLabel] = useState('');
+  const [keywordPickerOpen, setKeywordPickerOpen] = useState(false);
+  const [keywordSearchQuery, setKeywordSearchQuery] = useState('');
+  const [debouncedKeywordQuery, setDebouncedKeywordQuery] = useState('');
+  const [keywordPage, setKeywordPage] = useState(1);
+  const [keywordPagination, setKeywordPagination] = useState<KeywordPaginationMeta>({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+  });
   const [postTitle, setPostTitle] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [activeWebsiteId, setActiveWebsiteId] = useState('');
+  const [savingWebhookUrl, setSavingWebhookUrl] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const fetchKeywordOptions = useCallback(async (pageToLoad: number, query: string) => {
+    setLoadingKeywordOptions(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('page', String(pageToLoad));
+      params.set('limit', '20');
+      params.set('status', 'pending');
+      if (query.trim()) params.set('q', query.trim());
+
+      const res = await tenantFetch(`/api/keywords/search?${params.toString()}`);
+      const data = await res.json();
+      setKeywords(data.keywords || []);
+      if (data.pagination) {
+        setKeywordPagination(data.pagination);
+      } else {
+        setKeywordPagination({ page: pageToLoad, limit: 20, total: 0, totalPages: 1 });
+      }
+    } catch (keywordError) {
+      console.error('[Posts] Error fetching keyword options:', keywordError);
+      setError('Unable to load keywords.');
+    } finally {
+      setLoadingKeywordOptions(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeywordQuery(keywordSearchQuery);
+      setKeywordPage(1);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [keywordSearchQuery]);
+
+  useEffect(() => {
+    void fetchKeywordOptions(keywordPage, debouncedKeywordQuery);
+  }, [debouncedKeywordQuery, fetchKeywordOptions, keywordPage]);
 
   useEffect(() => {
     void fetchData();
   }, []);
+
+  useEffect(() => {
+    const syncWebsiteId = () => {
+      const websiteId = getStoredWebsiteId() || '';
+      setActiveWebsiteId((prev) => (prev === websiteId ? prev : websiteId));
+    };
+
+    syncWebsiteId();
+    const interval = setInterval(syncWebsiteId, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!activeWebsiteId) {
+      setWebhookUrl('');
+      return;
+    }
+    void loadWebsiteWebhook(activeWebsiteId);
+  }, [activeWebsiteId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -124,21 +209,54 @@ export default function PostsManager() {
     setLoading(true);
     setError('');
     try {
-      const [postsRes, keywordsRes] = await Promise.all([
-        tenantFetch('/api/posts/generate'),
-        tenantFetch('/api/keywords/generate'),
-      ]);
-
+      const postsRes = await tenantFetch('/api/posts/generate');
       const postsData = await postsRes.json();
-      const keywordsData = await keywordsRes.json();
-
       setPosts(postsData.posts || []);
-      setKeywords((keywordsData.keywords || []).filter((k: KeywordOption) => k.status === 'pending'));
     } catch (fetchError) {
       console.error('[Posts] Error fetching:', fetchError);
-      setError('Unable to load posts/keywords.');
+      setError('Unable to load posts.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadWebsiteWebhook(websiteId: string) {
+    try {
+      const res = await tenantFetch(`/api/websites/${websiteId}`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const website = data.website as WebsiteDetails | undefined;
+      setWebhookUrl(website?.externalWebhookUrl || '');
+    } catch (loadWebhookError) {
+      console.error('[Posts] Error loading website webhook:', loadWebhookError);
+    }
+  }
+
+  async function saveWebsiteWebhook() {
+    if (!activeWebsiteId) {
+      setError('Select a website first from workspace controls.');
+      return;
+    }
+    setSavingWebhookUrl(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await tenantFetch(`/api/websites/${activeWebsiteId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ externalWebhookUrl: webhookUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to save webhook URL.');
+        return;
+      }
+      setMessage('Webhook URL saved for this website.');
+    } catch (saveWebhookError) {
+      console.error('[Posts] Error saving website webhook:', saveWebhookError);
+      setError('Failed to save webhook URL.');
+    } finally {
+      setSavingWebhookUrl(false);
     }
   }
 
@@ -163,7 +281,11 @@ export default function PostsManager() {
         setPosts((prev) => [data.post, ...prev]);
         setPostTitle('');
         setSelectedKeywordId('');
-        await fetchData();
+        setSelectedKeywordLabel('');
+        await Promise.all([
+          fetchData(),
+          fetchKeywordOptions(keywordPage, debouncedKeywordQuery),
+        ]);
       } else {
         setError(data.error || 'Post generation failed.');
         console.error('[Posts] Generation failed:', data.error);
@@ -441,19 +563,97 @@ export default function PostsManager() {
             <form onSubmit={generateBlogPost} className="grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Select Keyword</label>
-                <select
-                  value={selectedKeywordId}
-                  onChange={(e) => setSelectedKeywordId(e.target.value)}
-                  disabled={generating}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2"
-                >
-                  <option value="">Choose a keyword...</option>
-                  {keywords.map((keyword) => (
-                    <option key={keyword.id} value={keyword.id}>
-                      {keyword.keyword}
-                    </option>
-                  ))}
-                </select>
+                <Popover open={keywordPickerOpen} onOpenChange={setKeywordPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={keywordPickerOpen}
+                      className="w-full justify-between"
+                      disabled={generating || loadingKeywordOptions}
+                    >
+                      <span className="truncate">
+                        {selectedKeywordId ? selectedKeywordLabel || 'Selected keyword' : 'Search and select keyword...'}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[430px] p-0">
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Type keyword to search..."
+                        value={keywordSearchQuery}
+                        onValueChange={setKeywordSearchQuery}
+                      />
+                      <CommandList>
+                        {loadingKeywordOptions ? (
+                          <div className="flex items-center gap-2 px-3 py-3 text-sm text-muted-foreground">
+                            <Spinner className="h-4 w-4" />
+                            Searching keywords...
+                          </div>
+                        ) : null}
+                        <CommandEmpty>No matching keywords found.</CommandEmpty>
+                        <CommandGroup heading="Pending Keywords">
+                          {selectedKeywordId && !keywords.some((keyword) => keyword.id === selectedKeywordId) ? (
+                            <CommandItem
+                              value={selectedKeywordLabel || 'selected-keyword'}
+                              onSelect={() => {
+                                setKeywordPickerOpen(false);
+                              }}
+                            >
+                              <Check className="h-4 w-4" />
+                              <span className="truncate">{selectedKeywordLabel || 'Selected keyword'}</span>
+                            </CommandItem>
+                          ) : null}
+                          {keywords.map((keyword) => (
+                            <CommandItem
+                              key={keyword.id}
+                              value={keyword.keyword}
+                              onSelect={() => {
+                                setSelectedKeywordId(keyword.id);
+                                setSelectedKeywordLabel(keyword.keyword);
+                                setKeywordPickerOpen(false);
+                              }}
+                            >
+                              <Check className={`h-4 w-4 ${selectedKeywordId === keyword.id ? 'opacity-100' : 'opacity-0'}`} />
+                              <span className="truncate">{keyword.keyword}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                    <div className="border-t px-3 py-2">
+                      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span>{`${keywordPagination.total} matching keywords`}</span>
+                        <span>{`Page ${keywordPagination.page} of ${keywordPagination.totalPages}`}</span>
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={loadingKeywordOptions || keywordPage <= 1}
+                          onClick={() => setKeywordPage((prev) => Math.max(1, prev - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={loadingKeywordOptions || keywordPage >= keywordPagination.totalPages}
+                          onClick={() => setKeywordPage((prev) => Math.min(keywordPagination.totalPages, prev + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Suggestions refresh 2 seconds after typing stops.
+                      </p>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Post Title</label>
@@ -483,13 +683,23 @@ export default function PostsManager() {
             </form>
             <div className="mt-4 grid gap-2 md:max-w-xl">
               <label className="text-sm font-medium">External Webhook URL (optional override)</label>
-              <Input
-                placeholder="https://your-main-site.com/api/content-ingest"
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  placeholder="https://your-main-site.com/api/content-ingest"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={saveWebsiteWebhook}
+                  disabled={savingWebhookUrl || !activeWebsiteId}
+                >
+                  {savingWebhookUrl ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
-                Leave empty to use server env `EXTERNAL_PUBLISH_WEBHOOK_URL`.
+                Saved per website. Leave empty to use server env `EXTERNAL_PUBLISH_WEBHOOK_URL`.
               </p>
             </div>
             {error ? (
@@ -642,8 +852,8 @@ export default function PostsManager() {
                           {post.seoAudit?.suggestions?.slice(0, 2).join(' ') || 'Looks well optimized.'}
                         </TableCell>
                         <TableCell className="hidden xl:table-cell">{post.readingTime} min</TableCell>
-                        <TableCell className="hidden text-muted-foreground 2xl:table-cell">
-                          {new Date(post.createdAt).toLocaleDateString()}
+                        <TableCell className="hidden text-muted-foreground lg:table-cell">
+                          {new Date(post.createdAt).toLocaleString()}
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>

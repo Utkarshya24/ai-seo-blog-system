@@ -252,9 +252,9 @@ export function AdminShell({ title, description, children }: AdminShellProps) {
   return (
     <div className="dashboard-bg min-h-screen">
       <div className="dashboard-grid-overlay min-h-screen">
-        <div className="mx-auto flex w-full max-w-[1500px] gap-6 px-3 py-3 sm:px-5 lg:px-6">
-          <aside className="hidden w-72 shrink-0 lg:block">
-            <div className="sticky top-4 overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 shadow-sm backdrop-blur">
+        <div className="mx-auto top-4 flex w-full gap-2">
+          <aside className="hidden w-72 lg:block">
+            <div className="sticky overflow-hidden rounded-3xl border border-border/70 bg-card/85 p-4 shadow-sm backdrop-blur">
               <Link href="/admin" className="mb-6 flex items-center gap-3 rounded-2xl border border-border/60 bg-background/70 p-3">
                 <div className="rounded-xl bg-primary/15 p-2 text-primary">
                   <Workflow className="h-5 w-5" />
