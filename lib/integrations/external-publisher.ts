@@ -4,6 +4,9 @@ export interface ExternalPostPayload {
   slug: string;
   content: string;
   metaDescription: string;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  imageDetails: Record<string, unknown> | null;
   status: string;
   publishedAt: string | null;
   keyword: string | null;

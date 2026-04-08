@@ -17,6 +17,9 @@ async function upsertArticleInMainSite(input: {
   slug: string;
   content: string;
   excerpt: string;
+  imageUrl: string | null;
+  imageAlt: string | null;
+  imageDetails: Record<string, unknown> | null;
   status: 'draft' | 'published' | 'scheduled';
   publishedAt: Date | null;
   primaryKeyword: string | null;
@@ -34,6 +37,9 @@ const payloadSchema = z.object({
   slug: z.string().min(1),
   content: z.string().min(1),
   metaDescription: z.string().default(''),
+  imageUrl: z.string().url().nullable().optional(),
+  imageAlt: z.string().nullable().optional(),
+  imageDetails: z.record(z.string(), z.unknown()).nullable().optional(),
   status: z.enum(['draft', 'published', 'scheduled']),
   publishedAt: z.string().datetime().nullable(),
   keyword: z.string().nullable(),
@@ -66,6 +72,9 @@ export async function POST(request: NextRequest) {
       slug: payload.slug,
       content: payload.content,
       excerpt: payload.metaDescription,
+      imageUrl: payload.imageUrl || null,
+      imageAlt: payload.imageAlt || null,
+      imageDetails: payload.imageDetails || null,
       status: payload.status,
       publishedAt: payload.publishedAt ? new Date(payload.publishedAt) : null,
       primaryKeyword: payload.keyword,

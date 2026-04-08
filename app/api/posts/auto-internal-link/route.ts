@@ -86,6 +86,8 @@ export async function POST(request: NextRequest) {
       data: {
         content,
         updatedAt: new Date(),
+        externalPushed: false,
+        externalPushedAt: null,
       },
     });
 

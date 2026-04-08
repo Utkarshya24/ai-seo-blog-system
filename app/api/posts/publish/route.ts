@@ -10,7 +10,7 @@ export async function PUT(request: NextRequest) {
     if (!authResult.ok) return authResult.response;
     const { tenantId, websiteId } = await resolveTenantContext(request, authResult.auth);
     const body = await request.json();
-    const { postId } = body;
+    const { postId, forceRepublish = false } = body as { postId?: string; forceRepublish?: boolean };
 
     if (!postId) {
       return NextResponse.json(
@@ -28,6 +28,21 @@ export async function PUT(request: NextRequest) {
     }
     if (websiteId && existing.websiteId && existing.websiteId !== websiteId) {
       return NextResponse.json({ error: 'Post does not belong to website' }, { status: 403 });
+    }
+
+    const alreadyPublishedWithoutChanges =
+      existing.status === 'published' &&
+      existing.publishedAt &&
+      existing.updatedAt.getTime() <= existing.publishedAt.getTime();
+
+    if (alreadyPublishedWithoutChanges && !forceRepublish) {
+      return NextResponse.json(
+        {
+          error: 'Post is already published with no new changes. Update the content first to publish again.',
+          alreadyPublished: true,
+        },
+        { status: 409 }
+      );
     }
 
     const post = await prisma.post.update({

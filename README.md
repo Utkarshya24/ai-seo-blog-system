@@ -71,6 +71,10 @@ Common optional variables:
 - `DEFAULT_WEBSITE_ID`
 - `EXTERNAL_PUBLISH_WEBHOOK_URL`
 - `EXTERNAL_PUBLISH_WEBHOOK_SECRET`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_UPLOAD_FOLDER`
 - `CONTENT_API_KEY`
 - `TECH_NEWS_SCHEDULE`
 
@@ -93,9 +97,10 @@ Run app at `http://localhost:3000`.
 4. Generate keywords.
 5. Generate blog drafts from keywords.
 6. Publish posts.
-7. Connect website via pull or push integration.
-8. Connect Google Search Console per website from `/admin/websites`.
-9. Track metrics and run optimization cycles.
+7. (Optional) Upload cover image in post editor; image is stored in Cloudinary and metadata is saved in DB.
+8. Connect website via pull or push integration.
+9. Connect Google Search Console per website from `/admin/websites`.
+10. Track metrics and run optimization cycles.
 
 Detailed guide:
 - `docs/USER_WORKFLOW.md`

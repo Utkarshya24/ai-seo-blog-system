@@ -36,6 +36,10 @@ interface Post {
   title: string;
   slug: string;
   status: string;
+  externalPushed: boolean;
+  externalPushedAt: string | null;
+  coverImageUrl?: string | null;
+  coverImageAlt?: string | null;
   readingTime: number;
   publishedAt: string | null;
   createdAt: string;
@@ -62,11 +66,20 @@ const pageSpeedStatusTones: Record<string, StatusTone> = {
   Unavailable: 'neutral',
 };
 
+const externalPushStatusTones: Record<string, StatusTone> = {
+  Pushed: 'success',
+  Draft: 'neutral',
+};
+
 function getPageSpeedStatus(score?: number) {
   if (!score || score <= 0) return 'Unavailable';
   if (score >= 70) return 'Good';
   if (score >= 50) return 'Needs Work';
   return 'Poor';
+}
+
+function getExternalPushStatus(post: Post) {
+  return post.externalPushed ? 'Pushed' : 'Draft';
 }
 
 interface KeywordOption {
@@ -117,6 +130,10 @@ export default function PostsManager() {
   const [editTitle, setEditTitle] = useState('');
   const [editMetaDescription, setEditMetaDescription] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editCoverImageUrl, setEditCoverImageUrl] = useState('');
+  const [editCoverImageAlt, setEditCoverImageAlt] = useState('');
+  const [editCoverImageFile, setEditCoverImageFile] = useState<File | null>(null);
+  const [removeCoverImage, setRemoveCoverImage] = useState(false);
   const [selectedKeywordId, setSelectedKeywordId] = useState('');
   const [selectedKeywordLabel, setSelectedKeywordLabel] = useState('');
   const [keywordPickerOpen, setKeywordPickerOpen] = useState(false);
@@ -211,10 +228,14 @@ export default function PostsManager() {
     try {
       const postsRes = await tenantFetch('/api/posts/generate');
       const postsData = await postsRes.json();
-      setPosts(postsData.posts || []);
+      if (!postsRes.ok) {
+        throw new Error(postsData.error || 'Unable to load posts.');
+      }
+      setPosts(Array.isArray(postsData.posts) ? postsData.posts : []);
     } catch (fetchError) {
       console.error('[Posts] Error fetching:', fetchError);
-      setError('Unable to load posts.');
+      const message = fetchError instanceof Error ? fetchError.message : 'Unable to load posts.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -349,6 +370,8 @@ export default function PostsManager() {
                     ...post,
                     status: data.post.status,
                     publishedAt: data.post.publishedAt,
+                    externalPushed: Boolean(data.post.externalPushed),
+                    externalPushedAt: data.post.externalPushedAt || null,
                   }
                 : post
             )
@@ -436,6 +459,10 @@ export default function PostsManager() {
       setEditTitle(data.post?.title || '');
       setEditMetaDescription(data.post?.metaDescription || '');
       setEditContent(data.post?.content || '');
+      setEditCoverImageUrl(data.post?.coverImageUrl || '');
+      setEditCoverImageAlt(data.post?.coverImageAlt || '');
+      setEditCoverImageFile(null);
+      setRemoveCoverImage(false);
     } catch (editorError) {
       console.error('[Posts] openEditor error:', editorError);
       setError('Failed to load post editor.');
@@ -450,6 +477,10 @@ export default function PostsManager() {
     setEditTitle('');
     setEditMetaDescription('');
     setEditContent('');
+    setEditCoverImageUrl('');
+    setEditCoverImageAlt('');
+    setEditCoverImageFile(null);
+    setRemoveCoverImage(false);
   }
 
   async function saveEditor() {
@@ -458,14 +489,19 @@ export default function PostsManager() {
     setMessage('');
     setSavingEditor(true);
     try {
+      const formData = new FormData();
+      formData.append('title', editTitle);
+      formData.append('metaDescription', editMetaDescription);
+      formData.append('content', editContent);
+      formData.append('coverImageAlt', editCoverImageAlt);
+      formData.append('removeCoverImage', String(removeCoverImage));
+      if (editCoverImageFile) {
+        formData.append('coverImage', editCoverImageFile);
+      }
+
       const res = await tenantFetch(`/api/posts/${editingPostId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editTitle,
-          metaDescription: editMetaDescription,
-          content: editContent,
-        }),
+        body: formData,
       });
       const data = await res.json();
       if (!res.ok) {
@@ -742,6 +778,11 @@ export default function PostsManager() {
                       <p className="text-xs text-muted-foreground">
                         SEO: <span className="text-foreground">{post.seoAudit?.score ?? 0}/100</span> | Read: <span className="text-foreground">{post.readingTime}m</span>
                       </p>
+                      <p className="text-xs text-muted-foreground">
+                        External: <span className="text-foreground">{getExternalPushStatus(post)}</span>
+                        {' '}| Last Push:{' '}
+                        <span className="text-foreground">{post.externalPushedAt ? new Date(post.externalPushedAt).toLocaleString() : '-'}</span>
+                      </p>
                       <div className="mt-2 flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">PageSpeed:</span>
                         <StatusBadge
@@ -798,12 +839,14 @@ export default function PostsManager() {
                 </div>
 
                 <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border/60 lg:block">
-                <Table className="min-w-[1280px] table-fixed">
+                <Table className="min-w-[1460px] table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
                       <TableHead>Keyword</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>External Push</TableHead>
+                      <TableHead className="hidden xl:table-cell">Last Pushed At</TableHead>
                       <TableHead>SEO Score</TableHead>
                       <TableHead>PageSpeed</TableHead>
                       <TableHead className="hidden lg:table-cell">SEO Suggestions</TableHead>
@@ -823,6 +866,15 @@ export default function PostsManager() {
                         <TableCell className="max-w-[180px] align-top whitespace-normal break-words">{post.keyword?.keyword}</TableCell>
                         <TableCell className="align-top">
                           <StatusBadge label={post.status} tonesByLabel={postStatusTones} />
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <StatusBadge
+                            label={getExternalPushStatus(post)}
+                            tonesByLabel={externalPushStatusTones}
+                          />
+                        </TableCell>
+                        <TableCell className="hidden text-muted-foreground xl:table-cell">
+                          {post.externalPushedAt ? new Date(post.externalPushedAt).toLocaleString() : '-'}
                         </TableCell>
                         <TableCell className="align-top">
                           <span
@@ -942,6 +994,46 @@ export default function PostsManager() {
                   className="min-h-[320px]"
                 />
               </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Cover Image (optional)</label>
+                {editCoverImageUrl && !removeCoverImage ? (
+                  <div className="mb-3 overflow-hidden rounded-md border border-border">
+                    <img src={editCoverImageUrl} alt={editCoverImageAlt || editTitle || 'Cover image'} className="h-48 w-full object-cover" />
+                  </div>
+                ) : null}
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setEditCoverImageFile(file);
+                    if (file) {
+                      setRemoveCoverImage(false);
+                    }
+                  }}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Uploading a new file replaces the current image.
+                </p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium">Cover Image Alt Text</label>
+                <Input
+                  value={editCoverImageAlt}
+                  onChange={(e) => setEditCoverImageAlt(e.target.value)}
+                  placeholder="Short descriptive alt text"
+                />
+              </div>
+              {(editCoverImageUrl || editCoverImageFile) ? (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={removeCoverImage}
+                    onChange={(e) => setRemoveCoverImage(e.target.checked)}
+                  />
+                  Remove current cover image
+                </label>
+              ) : null}
             </div>
           )}
 

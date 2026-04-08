@@ -364,11 +364,13 @@ export async function generateMetadata({ params }: BlogPostPageProps): Promise<M
       type: 'article',
       url: `${APP_URL}/blog/${post.slug}`,
       publishedTime: post.publishedAt?.toISOString(),
+      images: post.coverImageUrl ? [{ url: post.coverImageUrl, alt: post.coverImageAlt || post.title }] : undefined,
     },
     twitter: {
       card: 'summary_large_image',
       title: post.title,
       description: post.metaDescription,
+      images: post.coverImageUrl ? [post.coverImageUrl] : undefined,
     },
   };
 }
@@ -399,6 +401,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
     dateModified: post.updatedAt.toISOString(),
     mainEntityOfPage: `${APP_URL}/blog/${post.slug}`,
     keywords: post.keyword?.keyword ?? '',
+    image: post.coverImageUrl || undefined,
     author: {
       '@type': 'Organization',
       name: 'AI SEO Blog System',
@@ -481,6 +484,16 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           <p className="mt-4 text-lg text-muted-foreground">
             {post.metaDescription}
           </p>
+
+          {post.coverImageUrl ? (
+            <div className="mt-6 overflow-hidden rounded-lg border border-border">
+              <img
+                src={post.coverImageUrl}
+                alt={post.coverImageAlt || post.title}
+                className="h-auto w-full object-cover"
+              />
+            </div>
+          ) : null}
 
           <BlogCopyActions markdown={post.content} />
           <div className="mt-4">

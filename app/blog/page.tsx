@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils/seo';
 import { Metadata } from 'next';
+import Image from 'next/image';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -93,6 +94,15 @@ export default async function BlogPage() {
                 className="group flex h-full flex-col rounded-lg border border-border bg-card p-6 transition-all hover:border-primary hover:shadow-lg"
               >
                 <Link href={`/blog/${post.slug}`}>
+                  {post.coverImageUrl ? (
+                    <Image
+                      src={post.coverImageUrl}
+                      alt={post.coverImageAlt || post.title}
+                      width={800}
+                      height={450}
+                      className="mb-4 h-44 w-full rounded-md object-cover"
+                    />
+                  ) : null}
                   <h2 className="mb-2 text-xl font-bold text-foreground group-hover:text-primary">
                     {post.title}
                   </h2>

@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
       data: {
         title: optimized.title,
         metaDescription: optimized.metaDescription,
+        externalPushed: false,
+        externalPushedAt: null,
       },
       include: {
         keyword: true,

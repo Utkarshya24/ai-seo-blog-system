@@ -48,10 +48,12 @@ export async function POST(request: NextRequest) {
       postId,
       webhookUrl,
       publishIfDraft = true,
+      forceRepublish = false,
     }: {
       postId?: string;
       webhookUrl?: string;
       publishIfDraft?: boolean;
+      forceRepublish?: boolean;
     } = body;
 
     if (!postId) {
@@ -71,6 +73,22 @@ export async function POST(request: NextRequest) {
     }
     if (websiteId && post.websiteId && post.websiteId !== websiteId) {
       return NextResponse.json({ error: 'Post does not belong to website' }, { status: 403 });
+    }
+
+    const alreadyPushedWithoutChanges =
+      post.externalPushed &&
+      post.externalPushedAt &&
+      post.updatedAt.getTime() <= post.externalPushedAt.getTime();
+
+    if (alreadyPushedWithoutChanges && !forceRepublish) {
+      return NextResponse.json(
+        {
+          error: 'Post already pushed externally with no new changes. Edit the post to push updates.',
+          alreadyPushed: true,
+          alreadyPublished: true,
+        },
+        { status: 409 }
+      );
     }
 
     const website = post.websiteId
@@ -101,6 +119,8 @@ export async function POST(request: NextRequest) {
         data: {
           status: 'published',
           publishedAt: new Date(),
+          externalPushed: true,
+          externalPushedAt: new Date(),
         },
         include: { keyword: true },
       });
@@ -112,6 +132,11 @@ export async function POST(request: NextRequest) {
       slug: post.slug,
       content: post.content,
       metaDescription: post.metaDescription,
+      imageUrl: post.coverImageUrl || null,
+      imageAlt: post.coverImageAlt || null,
+      imageDetails: (post.coverImageMeta as Record<string, unknown> | null) || null,
+      image: post.coverImageUrl || null,
+      mainImage: post.coverImageUrl || null,
       status: post.status,
       publishedAt: post.publishedAt ? post.publishedAt.toISOString() : null,
       keyword: post.keyword?.keyword ?? null,
@@ -130,6 +155,17 @@ export async function POST(request: NextRequest) {
         { status: 502 }
       );
     }
+
+    const pushTimestamp = new Date();
+    post = await prisma.post.update({
+      where: { id: post.id },
+      data: {
+        externalPushed: true,
+        externalPushedAt: pushTimestamp,
+        ...(post.status === 'published' ? { publishedAt: pushTimestamp } : {}),
+      },
+      include: { keyword: true },
+    });
 
     return NextResponse.json({
       success: true,

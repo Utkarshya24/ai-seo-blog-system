@@ -381,6 +381,7 @@ Notes:
 
 - `webhookUrl` is optional if `EXTERNAL_PUBLISH_WEBHOOK_URL` is set.
 - Secret header `x-webhook-secret` is sent when `EXTERNAL_PUBLISH_WEBHOOK_SECRET` exists.
+- Payload sent to webhook includes `imageUrl`, `imageAlt`, and `imageDetails` when cover image exists.
 
 Response:
 
@@ -431,6 +432,13 @@ Response:
       "slug": "the-ultimate-guide-to-ai-tools",
       "metaDescription": "A concise SEO description...",
       "status": "published",
+      "coverImageUrl": "https://res.cloudinary.com/.../image/upload/...jpg",
+      "coverImageAlt": "Descriptive alt text",
+      "coverImageDetails": {
+        "publicId": "seo-blog/posts/post-abc",
+        "width": 1600,
+        "height": 900
+      },
       "publishedAt": "2026-03-31T12:10:00.000Z",
       "createdAt": "2026-03-31T12:05:00.000Z",
       "updatedAt": "2026-03-31T12:10:00.000Z",
@@ -454,6 +462,13 @@ Response:
   "content": "# The Ultimate Guide to AI Tools\n\n...",
   "metaDescription": "A concise SEO description...",
   "status": "published",
+  "coverImageUrl": "https://res.cloudinary.com/.../image/upload/...jpg",
+  "coverImageAlt": "Descriptive alt text",
+  "coverImageDetails": {
+    "publicId": "seo-blog/posts/post-abc",
+    "width": 1600,
+    "height": 900
+  },
   "publishedAt": "2026-03-31T12:10:00.000Z",
   "createdAt": "2026-03-31T12:05:00.000Z",
   "updatedAt": "2026-03-31T12:10:00.000Z",

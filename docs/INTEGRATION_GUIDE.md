@@ -93,6 +93,14 @@ Without proper scope, you may publish/fetch from wrong website context.
   "slug": "post-slug",
   "content": "full content",
   "metaDescription": "seo description",
+  "imageUrl": "https://res.cloudinary.com/.../image/upload/...jpg",
+  "imageAlt": "cover image alt text",
+  "imageDetails": {
+    "publicId": "seo-blog/posts/post-abc",
+    "width": 1600,
+    "height": 900,
+    "format": "jpg"
+  },
   "status": "published",
   "publishedAt": "2026-04-01T00:00:00.000Z",
   "niche": "ai tools",
